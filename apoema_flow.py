@@ -90,7 +90,10 @@ class ApoemaFlow(Flow):
         tasks = self.state["tasks"]
         task1 = tasks[0]
 
-        result = task1.execute_sync(input_files=self.state["input_files"])
+        # Set input_files on the task
+        task1.input_files = self.state["input_files"]
+
+        result = task1.execute_sync()
         self.state["data_analysis_result"] = result
         print(f"✓ Data analysis completed")
 
@@ -105,13 +108,11 @@ class ApoemaFlow(Flow):
         task2 = tasks[1]
         task1 = tasks[0]
 
-        # Set context manually since task context references need fresh context
+        # Set input_files and context on the task
+        task2.input_files = self.state["input_files"]
         task2.context = [task1]
 
-        result = task2.execute_sync(
-            input_files=self.state["input_files"],
-            context=[data_analysis_result],
-        )
+        result = task2.execute_sync()
         self.state["summarization_result"] = result
         print(f"✓ Summarization completed")
 
@@ -135,7 +136,8 @@ class ApoemaFlow(Flow):
         results = {}
         for idx, task in enumerate(tasks[2:], start=3):
             print(f"  ├─ Executing Task {idx}...")
-            result = task.execute_sync(input_files=self.state["input_files"])
+            task.input_files = self.state["input_files"]
+            result = task.execute_sync()
             results[f"task_{idx}"] = result
 
         self.state["pdf_analysis_results"] = results
@@ -154,7 +156,8 @@ class ApoemaFlow(Flow):
         results = {}
         for idx, task in enumerate(tasks[2:], start=7):
             print(f"  ├─ Executing Task {idx}...")
-            result = task.execute_sync(input_files=self.state["input_files"])
+            task.input_files = self.state["input_files"]
+            result = task.execute_sync()
             results[f"task_{idx}"] = result
 
         self.state["png_csv_analysis_results"] = results
