@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  # PostgreSQL com pgvector
+  postgres:
+    image: pgvector/pgvector:pg16-latest
+    container_name: apoema-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-apoema}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-apoema_dev_password}
+      POSTGRES_DB: ${DB_NAME:-apoema_db}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-apoema}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - apoema_network
+
+  # Flyway para migrations
+  flyway:
+    image: flyway/flyway:latest-alpine
+    container_name: apoema-flyway
+    command: -url=jdbc:postgresql://postgres:5432/${DB_NAME:-apoema_db} -user=${DB_USER:-apoema} -password=${DB_PASSWORD:-apoema_dev_password} -locations=filesystem:/flyway/sql migrate
+    volumes:
+      - ./migrations/sql:/flyway/sql
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - apoema_network
+
+  # RabbitMQ como broker do Dramatiq
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: apoema-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - apoema_network
+
+  # Worker Dramatiq (executará tarefas assíncronas)
+  dramatiq_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apoema-dramatiq-worker
+    command: dramatiq tasks
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-apoema}
+      DB_PASSWORD: ${DB_PASSWORD:-apoema_dev_password}
+      DB_NAME: ${DB_NAME:-apoema_db}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}//
+      PYTHONUNBUFFERED: 1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      flyway:
+        condition: service_completed_successfully
+    volumes:
+      - ./:/app
+    networks:
+      - apoema_network
+
+  # Aplicação Python principal (opcional)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apoema-app
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-apoema}
+      DB_PASSWORD: ${DB_PASSWORD:-apoema_dev_password}
+      DB_NAME: ${DB_NAME:-apoema_db}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}//
+      PYTHONUNBUFFERED: 1
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      flyway:
+        condition: service_completed_successfully
+    volumes:
+      - ./:/app
+      - ./input:/app/input
+      - ./output:/app/output
+    working_dir: /app
+    networks:
+      - apoema_network
+    # Descomente a linha abaixo se quiser que o app execute ao iniciar
+    # command: python main.py --assessment-file input/cc_assessment_data.json
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+
+networks:
+  apoema_network:
+    driver: bridge
