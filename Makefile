@@ -1,4 +1,4 @@
-.PHONY: install run help clean
+.PHONY: install run help clean serve docker docker-up docker-down docker-logs docker-logs-app docker-logs-worker docker-logs-db
 
 # Default target
 help:
@@ -13,6 +13,8 @@ help:
 	@echo "  make run exec-mode=crew ...                    Run with Crew execution (default: flow)"
 	@echo "  make run model=<model>                         Specify model (e.g., gpt-5-mini or claude-haiku-4.5)"
 	@echo "  make run prefix=<string>                       Specify custom prefix for output files"
+	@echo "  make serve                                     Run the API server"
+	@echo "  make docker                                    Start Docker environment (postgres, rabbitmq, worker, etc.)"
 	@echo "  make help                                      Show this help message"
 	@echo "  make clean                                     Clean generated output and cache"
 	@echo ""
@@ -54,4 +56,33 @@ clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@echo "✓ Cleaned!"
 
+# Run the API server
+serve:
+	@echo "Starting API server..."
+	uv run python run_api.py
+
+# Docker compose commands
+docker:
+	@echo "Starting Docker environment..."
+	docker compose up --build
+
+docker-up:
+	@echo "Starting Docker environment (detached)..."
+	docker compose up -d --build
+
+docker-down:
+	@echo "Stopping Docker environment..."
+	docker compose down
+
+docker-logs:
+	@docker compose logs -f
+
+docker-logs-app:
+	@docker compose logs -f apoema-app
+
+docker-logs-worker:
+	@docker compose logs -f apoema-dramatiq-worker
+
+docker-logs-db:
+	@docker compose logs -f apoema-postgres
 

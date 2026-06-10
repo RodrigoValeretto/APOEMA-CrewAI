@@ -50,17 +50,18 @@ class AnalysisRequest(BaseModel):
     model: str = Field(
         default=ModelType.GEMINI.value,
         description="LLM model to use",
-        regex="^(gemini|ollama)$",
+        pattern="^(gemini|ollama)$",
     )
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "assessment_file": "/app/input/cc_assessment_data.json",
                 "pdf_path": "/app/input/cc_report.pdf",
                 "model": "gemini",
             }
         }
+    }
 
     @validator("assessment_file", "pdf_path", "png_path", "csv_path", pre=True)
     def empty_str_to_none(cls, v):
@@ -80,12 +81,13 @@ class FileUploadRequest(BaseModel):
         description="Optional analysis ID to associate file with",
     )
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "file_type": "assessment",
             }
         }
+    }
 
 
 # Response Models
@@ -97,8 +99,8 @@ class AnalysisResponse(BaseModel):
     status: str = Field(..., description="Current analysis status")
     created_at: datetime = Field(..., description="Creation timestamp")
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "id": 42,
                 "type": "pdf",
@@ -106,6 +108,7 @@ class AnalysisResponse(BaseModel):
                 "created_at": "2024-06-09T12:00:00Z",
             }
         }
+    }
 
 
 class TaskResult(BaseModel):
@@ -116,8 +119,8 @@ class TaskResult(BaseModel):
     result: str = Field(..., description="Result content")
     created_at: datetime = Field(..., description="Creation timestamp")
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "id": 101,
                 "task_name": "task_1_data_analysis",
@@ -125,6 +128,7 @@ class TaskResult(BaseModel):
                 "created_at": "2024-06-09T12:05:00Z",
             }
         }
+    }
 
 
 class ProgressInfo(BaseModel):
@@ -140,14 +144,15 @@ class ProgressInfo(BaseModel):
         ..., ge=0, le=100, description="Percentage of completion (0-100)"
     )
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "total_tasks_expected": 6,
                 "completed_tasks": 3,
                 "percentage": 50.0,
             }
         }
+    }
 
 
 class AnalysisDetailResponse(BaseModel):
@@ -161,8 +166,8 @@ class AnalysisDetailResponse(BaseModel):
     results: List[TaskResult] = Field(default_factory=list)
     progress: ProgressInfo
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "id": 42,
                 "type": "pdf",
@@ -184,6 +189,7 @@ class AnalysisDetailResponse(BaseModel):
                 },
             }
         }
+    }
 
 
 class AnalysisListItem(BaseModel):
@@ -197,8 +203,8 @@ class AnalysisListItem(BaseModel):
         default=0, description="Number of results/tasks completed"
     )
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "id": 42,
                 "type": "pdf",
@@ -207,6 +213,7 @@ class AnalysisListItem(BaseModel):
                 "results_count": 6,
             }
         }
+    }
 
 
 class AnalysisListResponse(BaseModel):
@@ -217,8 +224,8 @@ class AnalysisListResponse(BaseModel):
     limit: int = Field(..., description="Number of items returned")
     items: List[AnalysisListItem] = Field(default_factory=list)
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "total": 150,
                 "skip": 0,
@@ -234,6 +241,7 @@ class AnalysisListResponse(BaseModel):
                 ],
             }
         }
+    }
 
 
 class FileUploadResponse(BaseModel):
@@ -245,8 +253,8 @@ class FileUploadResponse(BaseModel):
     size: int = Field(..., description="File size in bytes")
     created_at: datetime = Field(..., description="Upload timestamp")
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "id": 1,
                 "filename": "report.pdf",
@@ -255,6 +263,7 @@ class FileUploadResponse(BaseModel):
                 "created_at": "2024-06-09T12:00:00Z",
             }
         }
+    }
 
 
 class HealthCheckResponse(BaseModel):
@@ -264,8 +273,8 @@ class HealthCheckResponse(BaseModel):
     timestamp: datetime = Field(..., description="Check timestamp")
     services: dict = Field(default_factory=dict, description="Service status details")
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "status": "ok",
                 "timestamp": "2024-06-09T12:00:00Z",
@@ -275,6 +284,7 @@ class HealthCheckResponse(BaseModel):
                 },
             }
         }
+    }
 
 
 class ErrorResponse(BaseModel):
@@ -284,14 +294,15 @@ class ErrorResponse(BaseModel):
     message: str = Field(..., description="Error message")
     timestamp: datetime = Field(..., description="Error timestamp")
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "error": "ANALYSIS_NOT_FOUND",
                 "message": "Analysis with ID 999 not found",
                 "timestamp": "2024-06-09T12:00:00Z",
             }
         }
+    }
 
 
 class DeleteResponse(BaseModel):
@@ -300,13 +311,14 @@ class DeleteResponse(BaseModel):
     message: str = Field(..., description="Success message")
     id: int = Field(..., description="ID of deleted item")
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "message": "Analysis deleted successfully",
                 "id": 42,
             }
         }
+    }
 
 
 class ResultsResponse(BaseModel):
@@ -315,8 +327,8 @@ class ResultsResponse(BaseModel):
     analysis_id: int = Field(..., description="Analysis ID")
     results: List[TaskResult] = Field(default_factory=list)
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "analysis_id": 42,
                 "results": [
@@ -329,3 +341,4 @@ class ResultsResponse(BaseModel):
                 ],
             }
         }
+    }

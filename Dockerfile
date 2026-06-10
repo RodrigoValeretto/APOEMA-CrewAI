@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar arquivos de dependências
-COPY pyproject.toml uv.lock* ./
+# Copiar arquivos de dependências e README (necessário para o build)
+COPY pyproject.toml uv.lock* README.md ./
 
 # Instalar pip-tools para gerenciar dependências
 RUN pip install --no-cache-dir pip-tools
@@ -22,4 +22,6 @@ RUN pip install --no-cache-dir \
 
 COPY . .
 
-CMD ["python", "main.py"]
+# Default to running the API server
+# Override with command in docker-compose for different services (worker, etc.)
+CMD ["python", "run_api.py"]

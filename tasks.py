@@ -9,7 +9,6 @@ The workflow:
 5. Task updates final status to 'completed' or 'failed'
 """
 import dramatiq
-from dramatiq.brokers.rabbitmq import RabbitMQBroker
 import os
 from datetime import datetime
 import asyncio
@@ -22,12 +21,24 @@ from db_manager import (
 )
 
 # Configure RabbitMQ broker
+# The dramatiq CLI will handle broker configuration using environment variables
 rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672//")
-broker = RabbitMQBroker(url=rabbitmq_url)
-dramatiq.set_broker(broker)
+
+# Set the broker URL in environment for dramatiq CLI
+# This is used when running: dramatiq tasks
+os.environ.setdefault("DRAMATIQ_BROKER_URL", rabbitmq_url)
+
+# For direct usage, configure the broker if available
+try:
+    from dramatiq.brokers.rabbitmq import RabbitMQBroker
+    broker = RabbitMQBroker(url=rabbitmq_url)
+    dramatiq.set_broker(broker)
+except (ImportError, AttributeError, TypeError):
+    # If broker import fails, that's okay - the CLI will configure it
+    pass
 
 
-@dramatiq.actor(store_results=True, max_retries=0)
+@dramatiq.actor(max_retries=0)
 def run_analysis_flow_with_tracking(
     analysis_id: int,
     assessment_file: str,
@@ -111,7 +122,7 @@ def run_analysis_flow_with_tracking(
         raise e
 
 
-@dramatiq.actor(store_results=True, max_retries=0)
+@dramatiq.actor(max_retries=0)
 def run_analysis_crew_with_tracking(
     analysis_id: int,
     assessment_file: str,

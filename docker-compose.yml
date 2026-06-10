@@ -1,9 +1,7 @@
-version: '3.8'
-
 services:
   # PostgreSQL com pgvector
   postgres:
-    image: pgvector/pgvector:pg16-latest
+    image: pgvector/pgvector:0.8.0-pg16
     container_name: apoema-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-apoema}
@@ -14,10 +12,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-apoema}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-apoema} -d ${DB_NAME:-apoema_db} -h localhost"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
     networks:
       - apoema_network
 
@@ -25,7 +24,12 @@ services:
   flyway:
     image: flyway/flyway:latest-alpine
     container_name: apoema-flyway
-    command: -url=jdbc:postgresql://postgres:5432/${DB_NAME:-apoema_db} -user=${DB_USER:-apoema} -password=${DB_PASSWORD:-apoema_dev_password} -locations=filesystem:/flyway/sql migrate
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/apoema_db
+      FLYWAY_USER: apoema
+      FLYWAY_PASSWORD: apoema_dev_password
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+    command: migrate
     volumes:
       - ./migrations/sql:/flyway/sql
     depends_on:
@@ -47,10 +51,11 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test: rabbitmq-diagnostics -q ping
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 40s
     networks:
       - apoema_network
 
@@ -67,7 +72,7 @@ services:
       DB_USER: ${DB_USER:-apoema}
       DB_PASSWORD: ${DB_PASSWORD:-apoema_dev_password}
       DB_NAME: ${DB_NAME:-apoema_db}
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}//
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
       PYTHONUNBUFFERED: 1
     depends_on:
       postgres:
@@ -81,7 +86,7 @@ services:
     networks:
       - apoema_network
 
-  # Aplicação Python principal (opcional)
+  # FastAPI application (API server)
   app:
     build:
       context: .
@@ -93,10 +98,11 @@ services:
       DB_USER: ${DB_USER:-apoema}
       DB_PASSWORD: ${DB_PASSWORD:-apoema_dev_password}
       DB_NAME: ${DB_NAME:-apoema_db}
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}//
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
       PYTHONUNBUFFERED: 1
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEBUG: "False"
     ports:
       - "${APP_PORT:-8000}:8000"
     depends_on:
@@ -113,8 +119,8 @@ services:
     working_dir: /app
     networks:
       - apoema_network
-    # Descomente a linha abaixo se quiser que o app execute ao iniciar
-    # command: python main.py --assessment-file input/cc_assessment_data.json
+    # Runs the API server (default from Dockerfile)
+    command: python run_api.py
 
 volumes:
   postgres_data:

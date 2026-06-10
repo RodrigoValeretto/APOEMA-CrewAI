@@ -1,0 +1,5 @@
+[dramatiq]
+broker = "dramatiq.brokers.rabbitmq:RabbitMQBroker"
+
+[dramatiq.options]
+url = "amqp://guest:guest@rabbitmq:5672//"
