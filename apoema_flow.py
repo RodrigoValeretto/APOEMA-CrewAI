@@ -29,6 +29,8 @@ class ApoemaFlow(Flow):
         csv_path=None,
         output_prefix="output",
         model="gemini",
+        analysis_id=None,
+        on_task_complete=None,
     ):
         super().__init__()
 
@@ -39,6 +41,10 @@ class ApoemaFlow(Flow):
         self.state["csv_path"] = csv_path
         self.state["output_prefix"] = output_prefix
         self.state["model"] = model
+        self.state["analysis_id"] = analysis_id
+
+        # Store callback function
+        self.on_task_complete = on_task_complete
 
         # Determine which workflow path to take
         has_pdf = pdf_path and os.path.exists(pdf_path)
@@ -88,6 +94,10 @@ class ApoemaFlow(Flow):
         self.state["data_analysis_result"] = result
         print(f"✓ Data analysis completed")
 
+        # Call callback if provided
+        if self.on_task_complete:
+            self.on_task_complete("task_1_data_analysis", str(result))
+
         return result
 
     @listen(run_data_analysis)
@@ -105,6 +115,10 @@ class ApoemaFlow(Flow):
         self.state["summarization_result"] = result
         print(f"✓ Summarization completed")
 
+        # Call callback if provided
+        if self.on_task_complete:
+            self.on_task_complete("task_2_summarization", str(result))
+
         return result
 
     @router(run_summarization)
@@ -121,12 +135,25 @@ class ApoemaFlow(Flow):
 
         tasks = self.state["tasks"]
 
+        # Map task indices to task names
+        task_names = {
+            3: "task_3_extract_plots",
+            4: "task_4_analyze_plots",
+            5: "task_5_criteria_mapping",
+            6: "task_6_utility_assessment",
+        }
+
         # Execute PDF-related tasks (3-6)
         results = {}
         for idx, task in enumerate(tasks[2:], start=3):
             print(f"  ├─ Executing Task {idx}...")
             result = task.execute_sync()
             results[f"task_{idx}"] = result
+
+            # Call callback if provided
+            if self.on_task_complete:
+                task_name = task_names.get(idx, f"task_{idx}")
+                self.on_task_complete(task_name, str(result))
 
         self.state["pdf_analysis_results"] = results
         print(f"✓ PDF analysis completed ({len(results)} tasks)")
@@ -140,12 +167,24 @@ class ApoemaFlow(Flow):
 
         tasks = self.state["tasks"]
 
+        # Map task indices to task names
+        task_names = {
+            7: "task_7_plot_data_analysis",
+            8: "task_8_plot_insights",
+            9: "task_9_plot_utility_importance",
+        }
+
         # Execute PNG+CSV-related tasks (7-9)
         results = {}
         for idx, task in enumerate(tasks[2:], start=7):
             print(f"  ├─ Executing Task {idx}...")
             result = task.execute_sync()
             results[f"task_{idx}"] = result
+
+            # Call callback if provided
+            if self.on_task_complete:
+                task_name = task_names.get(idx, f"task_{idx}")
+                self.on_task_complete(task_name, str(result))
 
         self.state["png_csv_analysis_results"] = results
         print(f"✓ PNG+CSV analysis completed ({len(results)} tasks)")
@@ -179,7 +218,16 @@ class ApoemaFlow(Flow):
         return self.state
 
 
-async def run_apoema_flow(assessment_file, pdf_path, output_prefix, png_path=None, csv_path=None, model="gemini"):
+async def run_apoema_flow(
+    assessment_file,
+    pdf_path,
+    output_prefix,
+    png_path=None,
+    csv_path=None,
+    model="gemini",
+    analysis_id=None,
+    on_task_complete=None,
+):
     """
     Execute the APOEMA assessment analysis pipeline using Flow.
 
@@ -190,6 +238,8 @@ async def run_apoema_flow(assessment_file, pdf_path, output_prefix, png_path=Non
         png_path: Path to optional PNG plot image file
         csv_path: Path to optional CSV data file
         model: Model to use - 'gemini' or 'ollama' (default: 'gemini')
+        analysis_id: Optional ID of analysis for tracking
+        on_task_complete: Optional callback function(task_name, result) for each completed task
 
     Returns:
         result: The result from flow.kickoff()
@@ -201,6 +251,8 @@ async def run_apoema_flow(assessment_file, pdf_path, output_prefix, png_path=Non
         csv_path=csv_path,
         output_prefix=output_prefix,
         model=model,
+        analysis_id=analysis_id,
+        on_task_complete=on_task_complete,
     )
 
     flow.plot()
