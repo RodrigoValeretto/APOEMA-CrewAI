@@ -200,9 +200,9 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         run_analysis_flow_with_tracking.send(
             analysis_id=analysis_id,
             assessment_file=assessment_file,
-            pdf_path=pdf_path,
-            png_path=png_path,
-            csv_path=csv_path,
+            pdf_file=pdf_path,
+            png_file=png_path,
+            csv_file=csv_path,
             output_prefix=f"analysis_{analysis_id}",
             model=request.model,
         )

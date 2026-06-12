@@ -18,9 +18,10 @@ def get_llm(model: str = "gemini"):
         LLM: Configured LLM instance
     """
     if model == "ollama":
+        ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
         return LLM(
             model="ollama/gemma3:4b",
-            base_url="http://localhost:11434",
+            base_url=ollama_host,
             temperature=0.7,
         )
     else:  # Default to gemini

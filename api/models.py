@@ -48,7 +48,7 @@ class AnalysisRequest(BaseModel):
         description="ID of uploaded CSV file (alternative to csv_path)",
     )
     model: str = Field(
-        default=ModelType.GEMINI.value,
+        default=ModelType.OLLAMA.value,
         description="LLM model to use",
         pattern="^(gemini|ollama)$",
     )

@@ -1,0 +1,369 @@
+[
+    {
+        "tabela_id": 1,
+        "pagina": 1,
+        "dados": [
+            {
+                "0": "oordenador da Área:  \nAvelino Francisco Zorzo \nCoordenadora Adjunta de Programas Acadêmicos:  \nTeresa Bernarda Ludermir \nCoordenador Adjunto de Programas Profissionais: \nAltigran Soares da Silva"
+            }
+        ]
+    },
+    {
+        "tabela_id": 2,
+        "pagina": 1,
+        "dados": [
+            {
+                "0": "F\n  C\n                  C\n  R\n        2\n \nichas de Avaliação Acadêmico e \nProfissional  \nomputação \neferente ao Quadriênio 2025-2028 \nÁrea 02 \n025-2028",
+                "1": "",
+                "2": "",
+                "3": "1"
+            },
+            {
+                "0": "",
+                "1": "oordenador da Área:  \nAvelino Francisco Zorzo \nCoordenadora Adjunta de Programas Acadêmicos:  \nTeresa Bernarda Ludermir \nCoordenador Adjunto de Programas Profissionais: \nAltigran Soares da Silva",
+                "2": "",
+                "3": ""
+            },
+            {
+                "0": "",
+                "1": "",
+                "2": "",
+                "3": ""
+            }
+        ]
+    },
+    {
+        "tabela_id": 3,
+        "pagina": 3,
+        "dados": [
+            {
+                "0": "Quesitos/Itens",
+                "1": "Peso",
+                "2": "Peso"
+            },
+            {
+                "0": "1 – PROGRAMA",
+                "1": "Acadêmico",
+                "2": "Profissional"
+            },
+            {
+                "0": "1.1. Identidade e condições de funcionamento do Programa: missão, \ncorpo \ndocente, \ninfraestrutura, \narticulação \nentre \náreas \nde \nconcentração, linhas/projetos de pesquisa e estrutura curricular.",
+                "1": "50%",
+                "2": "50%"
+            },
+            {
+                "0": "1.2 \nPrincípios, \nprocedimentos \ne \nusos \ndos \nresultados \nda \nautoavaliação alinhados ao planejamento estratégico do Programa.",
+                "1": "25%",
+                "2": "25%"
+            },
+            {
+                "0": "1.3.  Planejamento  estratégico  do  Programa  em  articulação  com  o \nPlano de Desenvolvimento Institucional ou equivalente, incluindo as \npolíticas afirmativas e de promoção de equidade.",
+                "1": "25%",
+                "2": "25%"
+            },
+            {
+                "0": "2 – FORMAÇÃO E PRODUÇÃO INTELECTUAL",
+                "1": "Acadêmico",
+                "2": "Profissional"
+            },
+            {
+                "0": "2.1. Qualidade das teses, dissertações ou equivalentes e adequação \nàs áreas de concentração e linhas de pesquisa do Programa.",
+                "1": "20%",
+                "2": "20%"
+            },
+            {
+                "0": "2.2.  Destino  e  atuação  dos  egressos  do  Programa  em  relação  à \nformação recebida.",
+                "1": "20%",
+                "2": "20%"
+            },
+            {
+                "0": "2.3.  Qualidade  da  produção  intelectual  de  discentes  e  egressos  do \nPrograma.",
+                "1": "30%",
+                "2": "30%"
+            },
+            {
+                "0": "2.4. Qualidade das atividades de pesquisa e da produção intelectual \ndo corpo docente do Programa.",
+                "1": "30%",
+                "2": "30%"
+            },
+            {
+                "0": "3 – IMPACTO (local, regional, nacional, internacional)",
+                "1": "Acadêmico",
+                "2": "Profissional"
+            },
+            {
+                "0": "3.1. Inserção, visibilidade, popularização da ciência.",
+                "1": "30%",
+                "2": "25%"
+            },
+            {
+                "0": "3.2. Inovação, transferência e compartilhamento de conhecimento.",
+                "1": "25%",
+                "2": "30%"
+            },
+            {
+                "0": "3.3. Impactos do Programa para a sociedade.",
+                "1": "45%",
+                "2": "45%"
+            }
+        ]
+    },
+    {
+        "tabela_id": 4,
+        "pagina": 4,
+        "dados": [
+            {
+                "0": "Quesitos/Itens \nPeso \nDefinições e comentários sobre os Quesitos/Itens",
+                "1": "",
+                "2": ""
+            },
+            {
+                "0": "1 – Programa",
+                "1": "",
+                "2": ""
+            },
+            {
+                "0": "1.1. Identidade e condições de \nfuncionamento  do  Programa: \nmissão, \ncorpo \ndocente, \ninfraestrutura, \narticulação \nentre  áreas  de  concentração, \nlinhas/projetos  de  pesquisa  e \nestrutura curricular.",
+                "1": "50%",
+                "2": "O  programa  deve  abranger  subáreas  da  Computação  e  exigir  que \nseus titulados tenham conhecimentos fundamentais de formação \nem Ciência da Computação, conforme descrito no Documento de \nÁrea. \nSerão avaliados de maneira qualitativa:  \n● \na descrição dos objetivos do(s) curso(s), perfil do egresso, \nhabilidades e competências que se esperam dos egressos \n– estes aspectos devem estar alinhados entre si e com a \nestrutura curricular do curso;  \n● \na adequação, equilíbrio e abrangência das disciplinas \nministradas em relação à área de concentração, às linhas \nde pesquisa e ao perfil dos egressos – disciplinas devem \natender aos objetivos e perfil de egressos;  \n● \na aderência aos conteúdos de fundamentos de Ciência da \nComputação;  \n● \na distribuição balanceada do corpo docente permanente1 \nem relação às linhas e aos projetos de pesquisa;  \n● \na infraestrutura de pesquisa: laboratórios adequados ao \nnúmero de alunos de pós-graduação;  \n● \nlaboratórios temáticos; salas de alunos, salas de \nprofessores, salas de aula, biblioteca. \nNo  último  ano  da  quadrienal,  anexar  fotos  e  plantas  dos  espaços \nfísicos disponibilizados para o programa, destacando as melhorias \nrealizadas no quadriênio – ANEXO 1.  \nEstes aspectos são avaliados em relação aos objetivos, à missão e \nà modalidade do programa.  \nO programa deve possuir corpo docente com formação e atuação \nna Área de Computação. Serão avaliados de maneira qualitativa:  \n● \na estabilidade e/ou a renovação do corpo docente; \nabrangência e especialização dos docentes e o percentual \ndocentes com pós-doutorado;  \n● \n diversificação de formação do corpo docente na origem; \n● \na composição, a atuação, a distribuição do corpo docente \npela estrutura curricular do programa."
+            }
+        ]
+    },
+    {
+        "tabela_id": 5,
+        "pagina": 5,
+        "dados": [
+            {
+                "0": "",
+                "1": "",
+                "2": "Serão avaliadas de acordo com a mediana da Área no quadriênio as \natividades  de  orientação,  docência \ne  pesquisa.  Deve  haver \ndistribuição \nequilibrada, \nbaseado \nna  mediana \nda \nÁrea, \nde \norientações entre os professores do programa e que não haja forte \ndependência de orientadores externos. Serão avaliados: \n● \na distribuição da carga horária letiva em relação aos \ndocentes;  \n● \na distribuição da orientação entre os docentes;  \n● \no número médio de orientandos por docente. \nValoriza-se corpo docente com perfil equivalente aos bolsistas de \nProdutividade \nem \nPesquisa \n(PQ) \nou \nde \nProdutividade \nem \nDesenvolvimento Tecnológico e Extensão Inovadora (DT) do CNPq e \ninserção  na  comunidade  internacional  e  nacional,  expressa  pela \nparticipação em comitês de programa, comitês editoriais, atuação \nem sociedades científicas, etc. \nA  proporção  de  docentes  em  tempo \nintegral  e  com  dedicação \nexclusiva deve seguir o expresso no Documento de Área.  \nValoriza-se  a  participação  docente  na \nformação  de  alunos  de \niniciação científica/técnica e no ensino da graduação. \nSerá, \ntambém,  avaliado  o \nrelacionamento  entre  a  produção \nbibliográfica e técnica dos docentes com a produção dos discentes \ne, em particular, com os seus trabalhos de conclusão. Valoriza-se a \nexistência  de  produção  bibliográfica  e \ntécnica \nrelacionada  ou \nderivada do  tema/projeto. \nOs demais indicadores mencionados no Documento de Área devem \nser respeitados."
+            },
+            {
+                "0": "1.2  Princípios,  procedimentos \ne \nusos \ndos \nresultados \nda \nautoavaliação \nalinhados \nao \nplanejamento  estratégico  do \nPrograma.",
+                "1": "25%",
+                "2": "Serão  avaliados  o  projeto,  mecanismos  de  autoavaliação  do \nprograma e a evolução (ou o planejamento de melhorias) decorrente \ndo  processo  de  autoavaliação. \nIndicadores  da  autoavaliação \n(alinhados \ncom \nas \ncaracterísticas \ninstitucionais) \ndevem \nser \napresentados. \nNeste item serão analisadas a evolução da formação e a produção \nintelectual entre o quadriênio anterior e o atual. \nA autoavaliação deve estar alinhada ao planejamento estratégico do \nPrograma."
+            }
+        ]
+    },
+    {
+        "tabela_id": 6,
+        "pagina": 6,
+        "dados": [
+            {
+                "0": "1.3.  Planejamento  estratégico \ndo  Programa  em  articulação \ncom \no \nPlano \nde \nDesenvolvimento  Institucional \nou  equivalente, \nincluindo  as \npolíticas \nafirmativas \ne \nde \npromoção de equidade.",
+                "1": "25%",
+                "2": "Será  avaliado  de  maneira  qualitativa  o  planejamento  para  o \ndesenvolvimento \nfuturo  do  programa  e  as  metas  para  melhor \nformação, impacto na sociedade e produção intelectual. \nDeve ser descrito na proposta como o planejamento foi elaborado e \ncomo ele se articula com o planejamento institucional. \nDevem \nser \ndescritas \nações \ndecorrentes \ndo \nplanejamento \nestratégico que já tenham acontecido no quadriênio ou que estejam \nplanejadas para o futuro. \nO planejamento do programa deve descrever os diversos aspectos \nmencionados no Documento de Área em suas seções. \nSe houver melhorias na infraestrutura planejadas, estas devem ser \ndestacadas nas fotos, ou plantas, do ANEXO 1."
+            },
+            {
+                "0": "2 – Formação e produção intelectual",
+                "1": "",
+                "2": ""
+            },
+            {
+                "0": "2.1. \nQualidade \ndas \nteses, \ndissertações ou equivalentes e \nadequação \nàs \náreas \nde \nconcentração \ne \nlinhas \nde \npesquisa do Programa.",
+                "1": "20%",
+                "2": "O programa será avaliado qualitativamente considerando:  \n● \nalinhamento das dissertações ou teses com as linhas de \npesquisa e área(s) de concentração do programa;  \n● \nproduções resultantes das dissertações ou teses, e \nprêmios (ANEXO 5), considerando a justificativa \napresentada. \nO número  de  titulados  em  relação  às  áreas  de  concentração  e \nlinhas  de  pesquisa \ne \nà  dimensão  do \ncorpo  discente serão \ncomparados com a mediana nacional dos programas acadêmicos \nda área no quadriênio."
+            },
+            {
+                "0": "2.2.  Destino  e  atuação  dos \negressos \ndo \nPrograma \nem \nrelação à formação recebida",
+                "1": "20%",
+                "2": "Serão avaliados: \n● \na forma de acompanhamento para os titulados no \nquadriênio do programa; \n● \no destino e a atuação dos titulados no quadriênio (ANEXO \n7), considerando a justificativa apresentada;  \n● \nos E egressos dos últimos 15 anos de destaque do \nprograma. Onde E é o maior valor entre 16 e N/2, sendo N o \nnúmero médio de docentes permanentes do programa no \nquadriênio (ANEXO 7). Deve-se respeitar os seguintes \nlimites: mínimo de 16 e máximo de N/2 egressos no total, e \npelo menos 4 egressos por período (três quadriênios \nanteriores ao atual, dois quadriênios anteriores ao atual, \num quadriênio anterior ao atual, quadriênio atual). \nValoriza-se o acompanhamento sistemático e contínuo dos demais \negressos do programa."
+            },
+            {
+                "0": "2.3.  Qualidade  da  produção \nintelectual \nde \ndiscentes \ne \negressos do Programa.",
+                "1": "30%",
+                "2": "Para a produção intelectual discente serão considerados os artigos \ncompletos  em  periódicos,  eventos  e  produtos \ntécnicos  com \nparticipação discente (ou de egressos até 5 anos, considerando o \nano  da  publicação).  O  percentual  de  alunos  que  participam  das"
+            }
+        ]
+    },
+    {
+        "tabela_id": 7,
+        "pagina": 7,
+        "dados": [
+            {
+                "0": "",
+                "1": "",
+                "2": "melhores produções (ANEXOS 3 e 4) e o percentual de alunos com \nproduções qualificadas será utilizado como base para a avaliação \ndeste item.  \nPara a produção técnica será considerado o que está na Seção 2.2 \ndo Documento de Área. A cada produto técnico existente no ANEXO \n4 será atribuído um nível, de maneira qualitativa. \nPara a análise qualitativa, a produção discente existente nos ANEXO \n3  –  4N  produções  mais  relevantes  e  ANEXO  4  -  M  produções \ntécnicas mais relevantes serão consideradas, onde N é a média de \ndocentes permanentes na quadrienal e M é o maior valor entre 10 e \nN/4. Esta análise influenciará o conceito deste item. \nValorizam-se programas que apresentem:  \n● \numa produção bibliográfica qualificada por dissertação de \nmestrado; \n● \npelo menos uma publicação bibliográfica qualificada em \npercentil superior a 50% em bases como Scopus, Web of \nScience (WoS) ou H5 equivalente, por tese de doutorado."
+            },
+            {
+                "0": "2.4.  Qualidade  das  atividades \nde  pesquisa  e  da  produção \nintelectual do corpo   docente \ndo Programa.",
+                "1": "30%",
+                "2": "Para a produção intelectual docente serão considerados os artigos \ncompletos  em  periódicos  e  eventos, \nlivros  e  produção  técnica \ndeclarados \nlistados \nnos \nANEXOS \n3 \n(bibliográfica) \ne \n4 \n(técnica/tecnológica).  Os \níndices \nserão \nanalisados \nna \nsua \ntotalidade \n(volume)  e  ponderados  por  número  de  docentes \npermanentes da seguinte forma: \nProdução Bibliográfica do ANEXO 3: \nProdBibliográficatotal = #A1+#A2x0,875+#A3x0,75+#A4x0,625 + #L1 + \n#L2x0,8 + #L3x0,6 + #CL1x0,5 \nProdBibliográficaponderado = ProdBibliográficatotal/N \nProdução Técnica do ANEXO 4: \nProdTécnicatotal = #T1+#T2x0,8+#T3x0,6 \nProdTécnicaponderado = ProdTécnicatotal/N \nEm que, #A1 é o número de artigos completos em periódicos ou em \neventos, #L1 é o número de livros classificados, #CL1 é número de \ncapítulos  de  livros  classificados  e  #T1    é  o  número  de  produtos \ntécnicos, todos classificados no nível 1 de estratificação da Área, e \nassim  por  diante.  N  é  a  média  no  quadriênio  de  docentes \npermanentes do programa, sem contar os Professores (Docentes) \nPermanentes  Junior  (PPJ)  e  Professores  (Docentes)  Permanentes \nSênior (PPS) (ANEXO 2). \nEstes  indicadores  serão  utilizados  como  base  quantitativa  para  a \nanálise do item. A Área utiliza a mediana como base para qualificar \neste item.  Programas acima da mediana na produção bibliográfica \nterão conceito Muito Bom se estiverem entre os 20% melhores, Bom \nse estiverem entre os 50% melhores, Regular se estiver abaixo da"
+            }
+        ]
+    },
+    {
+        "tabela_id": 8,
+        "pagina": 8,
+        "dados": [
+            {
+                "0": "",
+                "1": "",
+                "2": "mediana  mas  entre  os  70%  melhores.  Os  conceitos  Fraco  e \nInsuficiente serão atribuídos aos programas que estiverem entre os \n30%  e  10%  piores,  respectivamente.  Estes  conceitos  poderão  ser \nalterados  dependendo  da  produção  técnica  do  programa  ou  dos \naspectos qualitativos mencionados a seguir. \nO \ncorpo  docente  deve \napresentar  qualidade,  quantidade \ne \nregularidade  das  produções \nintelectuais.  Estes  aspectos  serão \nanalisados de maneira qualitativa. \nA  qualificação  das  produções  intelectuais  seguirá  o  descrito  no \nDocumento  de  Área  e,  também,  uma  análise  qualitativa  nas  4N \nproduções  bibliográficas  e  M  produções  técnicas  selecionadas \npelos programas (ANEXO 3 e ANEXO 4). \nO  programa  deve  apresentar  uma  distribuição  equilibrada  das \nproduções intelectuais pelos docentes e linhas de pesquisa, com \nqualidade e regularidade.  \nDeve existir boa distribuição dos docentes em projetos de pesquisa \ninstitucionais e de cooperação nacional e internacional. No escopo \nda avaliação, um projeto deve ter apoio financeiro. \nValorizam-se projetos institucionais, projetos que tragam recursos \ne  projetos  de  intercâmbio,  nacionais,  internacionais  e  iniciativas \nbem-sucedidas \nde \ntransferência \npara \na \nsociedade \nde \nconhecimento gerado no programa. Os relatórios devem ressaltar \ntais iniciativas."
+            },
+            {
+                "0": "3 – Impacto (local, regional, nacional, internacional)",
+                "1": "",
+                "2": ""
+            },
+            {
+                "0": "3.1. \nInserção, \nvisibilidade, \npopularização da ciência.",
+                "1": "30%",
+                "2": "Os  indicadores  mencionados  no  Documento  de  Área  nas  Seções \n2.4 \n(impacto  na \nsociedade),  2.5 \n(internacionalização)  e  2.6 \n(redução  de  assimetrias  regionais)  serão  utilizados  neste  item.  A \nimportância  relativa  dos  indicadores  de  internacionalização  e  de \ninserção serão função da missão/objetivos do programa. \nOs \nprogramas \ndevem \npossuir \natividades \nvoltadas \nà \ninternacionalização,  com  participação  dos  docentes  e  discentes \nem colaborações internacionais.  \nOs  programas  devem  apresentar  cooperação  com  entidades  ou \nempresas públicas ou privadas, demonstrando sua inserção (local, \nregional, nacional ou internacional). \nVisibilidade  dos  docentes  em  bases  de  dados \ninternacionais \n(Google  Scholar,  Scopus,  Web  of  Science,  e  outros)  e  teses  e \ndissertações escritas em inglês são consideradas neste item. \nO programa deve manter página Web (em mais de uma língua além \ndo  português,  preferencialmente \ninglês)  para  a  divulgação,  de \nforma atualizada, de seus dados internos, critérios de seleção de \nalunos, \nparte \nsignificativa \nde \nsua \nprodução \ndocente, \nfinanciamentos recebidos da CAPES e de outras agências públicas"
+            }
+        ]
+    },
+    {
+        "tabela_id": 9,
+        "pagina": 9,
+        "dados": [
+            {
+                "0": "",
+                "1": "",
+                "2": "e entidades privadas. Além disso, o programa deve garantir amplo \nacesso às teses e dissertações pela Web. \nAtividades de popularização da ciência devem ser descritas e serão \nvalorizadas pela área."
+            },
+            {
+                "0": "3.2.  Inovação,  transferência  e \ncompartilhamento \nde \nconhecimento.",
+                "1": "25%",
+                "2": "O  programa  será  avaliado  pela  formação  de  recursos  humanos \nqualificados  para \na \nsociedade \ne  pela \ncontribuição  para  o \ndesenvolvimento \nsocioeconômico, \ndestacando \nos \navanços \nprodutivos,  disseminação  de  técnicas  e  conhecimentos,  além  de \nempreendedorismo.  Esses  aspectos  podem  ser \nrelatados  nos \nanexos. \nValoriza-se,  ainda,  a  contribuição  para  a  melhoria  do  ensino  de \ngraduação e para o desenvolvimento de propostas inovadoras de \nensino.  Valorizam-se,  também,  ações  relacionadas  à  Educação \nBásica  que  promovam  a  melhoria  da  qualidade  do  ensino,  a \ninclusão  digital  e  a  atração  de  recursos  humanos  para  a  Área  de \nComputação. \nEsses \naspectos \ndevem \nestar \ndestacados \nna \nplataforma Sucupira de maneira clara. \nValoriza-se que o programa participe em programas de cooperação \ne \nintercâmbio  sistemáticos  e  a  participação  em  projetos  de \ncooperação \nentre \nprogramas \ncom \nníveis \nde \nconsolidação \ndiferentes, \nvoltados \npara \na \ninovação \nna \npesquisa \nou \no \ndesenvolvimento  da  pós-graduação  em  regiões  ou  sub-regiões \ngeográficas menos aquinhoadas (atuação de docentes visitantes; \nparticipação em programas de nucleação e solidariedade."
+            },
+            {
+                "0": "3.3. \nImpactos  do  Programa \npara a sociedade.",
+                "1": "45%",
+                "2": "Neste item serão considerados: \n● \npremiações, artigos ou teses que geraram produtos ou \nnovos empreendimentos (ANEXO 5);  \n● \nos M casos de impacto do programa serão considerados \nneste item (ANEXO 6, onde M é o maior valor entre 10 e \nN/4, sendo N o número médio de docentes permanentes \ndo programa);  \n● \nproduções qualificadas existentes nos ANEXOS 3 e 4 que \ntenham algum tipo de impacto serão analisadas \nconsiderando a justificativa apresentada pelo programa.  \n \nAlém  disso,  os  indicadores  nos  Itens  2.3  e  2.4,  também  serão \nutilizados para análise dos produtos apresentados."
+            }
+        ]
+    },
+    {
+        "tabela_id": 10,
+        "pagina": 10,
+        "dados": [
+            {
+                "0": "Quesitos/Itens \nPeso \nDefinições e comentários sobre os Quesitos/Itens",
+                "1": "",
+                "2": ""
+            },
+            {
+                "0": "1 – Programa",
+                "1": "",
+                "2": ""
+            },
+            {
+                "0": "1.1. \nIdentidade  e  condições  de \nfuncionamento \ndo \nPrograma: \nmissão, \ncorpo \ndocente, \ninfraestrutura,  articulação  entre \náreas \nde \nconcentração, \nlinhas/projetos \nde \npesquisa \ne \nestrutura curricular.",
+                "1": "50%",
+                "2": "O programa deve abranger subáreas da Computação e exigir que \nseus  titulados  tenham  cursado  conteúdos  fundamentais  de \nformação  em  Computação,  conforme  descrito  no  Documento \nde Área. \nSerão avaliados, de maneira qualitativa:  \n● \nse o conjunto de atividades e disciplinas ofertadas, \ncom suas ementas, atende às características do \ncampo profissional, à(s) área(s) de concentração \nproposta(s), linha(s) de atuação, objetivos e perfil de \negresso definidos pelo programa; \n● \nse existe uma distribuição balanceada do corpo \ndocente permanente2 em relação às linhas de atuação \ne projetos de pesquisa ou desenvolvimento;  \n● \nse o programa possui interação com os arranjos \nprodutivos locais, regionais e, possivelmente, \nnacionais, atendendo demandas de formação de \nprofissionais e também de soluções; \n● \nse o programa possui uma boa infraestrutura de \npesquisa: laboratórios adequados ao número de \nalunos de pós-graduação;  \n● \nlaboratórios temáticos, salas de alunos, salas de \nprofessores e salas de aula (anexar fotos e plantas dos \nespaços físicos disponibilizados para o programa, \ndestacando as melhorias realizadas no quadriênio – \nANEXO 1).  \nEstes  aspectos  são  avaliados  em \nrelação  aos  objetivos,  à \nmissão e à modalidade do programa. \nO  corpo  docente  permanente  deve  ser  formado  por  doutores, \nprofissionais e técnicos com experiência em pesquisa aplicada \nao  desenvolvimento  e  à \ninovação.  Docentes  não  doutores \ndevem ser justificados conforme consta no Documento de Área. \nOs membros do corpo docente serão avaliados de acordo com o \nseu perfil de pesquisador e/ou profissional. Serão considerados \nos seguintes aspectos de maneira qualitativa:"
+            }
+        ]
+    },
+    {
+        "tabela_id": 11,
+        "pagina": 11,
+        "dados": [
+            {
+                "0": "",
+                "1": "",
+                "2": "● \ncorpo docente com formação e atuação na Área de \nComputação ou áreas afins (desde que claramente \nrelacionadas com os objetivos do programa);  \n● \ndiversificação de formação do corpo docente na \norigem;  \n● \natuação em Pesquisa, Desenvolvimento e Inovação \nnas áreas de concentração do programa; percentual do \ncorpo docente com perfil equivalente a bolsistas de \nProdutividade em Desenvolvimento Tecnológico e \nExtensão Inovadora (DT) ou de Produtividade em \nPesquisa (PQ) do CNPq;  \n● \ninserção na comunidade nacional, expressa pela \nparticipação em comitês de programa, comitês \neditoriais, atuação em sociedades científicas, comitês \nnormativos, associações tecnológicas, arranjos \nprodutivos, etc. \nDeve  haver  distribuição  equilibrada,  baseado  na  mediana  da \nÁrea,  de  orientações  entre  os  professores  do  programa  e  que \nnão  haja \nforte  dependência  de  orientadores  externos.  Os \nseguintes aspectos serão analisados de maneira quantitativa: \n● \na distribuição da carga horária letiva em relação aos \ndocentes;  \n● \na distribuição da orientação entre os docentes;  \n● \no número médio de orientandos por docente;  \n● \na quantidade de orientadores do corpo permanente \nrelativamente à dimensão do corpo docente. \nValoriza-se  a  participação  docente  na  formação  de  alunos  de \niniciação técnica e no ensino da graduação. \nNeste \nitem  também  será  considerado  o  perfil  da  produção \nintelectual (bibliográfica ou técnica/tecnológica) dos docentes. \nSerá,  também,  avaliado  o  relacionamento  entre  a  produção \nbibliográfica  e \ntécnica  dos  docentes  com  a  produção  dos \ndiscentes e, em particular, com os seus trabalhos de conclusão. \nValoriza-se  a  existência  de  produção  bibliográfica  e  técnica \nsobre o mesmo tema/projeto."
+            },
+            {
+                "0": "1.2  Princípios,  procedimentos  e \nusos \ndos \nresultados \nda \nautoavaliação \nalinhados \nao \nplanejamento \nestratégico \ndo \nPrograma.",
+                "1": "25%",
+                "2": "Serão  avaliados  o  projeto,  mecanismos  de  autoavaliação  do \nprograma  e  a  evolução \n(ou  o  planejamento  de  melhorias) \ndecorrente  do  processo  de  autoavaliação. \nIndicadores  da \nautoavaliação (alinhados com as características institucionais) \ndevem ser apresentados. \nNeste \nitem  serão  analisadas  a  evolução  da \nformação  e  a \nprodução intelectual entre o quadriênio anterior e o atual. \nA \nautoavaliação \ndeve \nestar \nalinhada \nao \nplanejamento \nestratégico do Programa."
+            }
+        ]
+    },
+    {
+        "tabela_id": 12,
+        "pagina": 12,
+        "dados": [
+            {
+                "0": "1.3.  Planejamento  estratégico  do \nPrograma  em  articulação  com  o \nPlano \nde \nDesenvolvimento \nInstitucional \nou \nequivalente, \nincluindo as políticas afirmativas e \nde promoção de equidade.",
+                "1": "25%",
+                "2": "Será  avaliado  de  maneira  qualitativa  o  planejamento  para  o \ndesenvolvimento  futuro  do  programa  e  as  metas  para  melhor \nformação, impacto na sociedade e produção intelectual. \nDeve ser claramente descrito na proposta como o planejamento \ndo  programa \nfoi  elaborado  e  como  ele  se  articula  com  o \nplanejamento institucional. \nDevem  ser  descritas  ações  decorrentes  do  planejamento \nestratégico  que  já  tenham  acontecido  no  quadriênio,  ou  que \nestejam planejadas para o futuro. \nO  planejamento  do  programa  deve  descrever  os  diversos \naspectos mencionados no Documento de Área em suas seções. \nSe houver melhorias na infraestrutura planejadas, essas devem \nser destacadas nas fotos, ou plantas, no ANEXO 1."
+            },
+            {
+                "0": "2 – Formação e produção intelectual",
+                "1": "",
+                "2": ""
+            },
+            {
+                "0": "2.1. \nQualidade \ndas \nteses, \ndissertações  ou  equivalentes  e \nadequação \nàs \náreas \nde \nconcentração \ne \nlinhas \nde \npesquisa do Programa.",
+                "1": "20%",
+                "2": "O programa será avaliado considerando:  \n● \nalinhamento das dissertações ou teses com as linhas \nde pesquisa e área(s) de concentração do programa;  \n● \nproduções resultantes das dissertações ou teses, e \nprêmios (ANEXO 5), considerando a justificativa \napresentada. \nO número de titulados em relação às áreas de concentração e \nlinhas  de  pesquisa  e  à  dimensão  do  corpo  discente serão \ncomparados \ncom \na  mediana \nnacional \ndos \nprogramas \nacadêmicos da área no quadriênio."
+            },
+            {
+                "0": "2.2. \nDestino \ne \natuação \ndos \negressos do Programa em relação \nà formação recebida",
+                "1": "20%",
+                "2": "Serão avaliados: \n● \na forma de acompanhamento para os titulados no \nquadriênio do programa; \n● \no destino e a atuação dos titulados no quadriênio \n(ANEXO 7), considerando a justificativa apresentada;   \n● \nos E egressos dos últimos 15 anos de destaque do \nprograma. Onde E é o maior valor entre 16 e N/2, sendo \nN o número médio de docentes permanentes do \nprograma no quadriênio (ANEXO 7). Deve-se respeitar \nos seguintes limites: mínimo de 16 e máximo de N/2 \negressos no total, e pelo menos 4 egressos por período \n(dois quadriênios anteriores ao atual, dois quadriênios \nanteriores ao atual, um quadriênio anterior ao atual, \nquadriênio atual). \nValoriza-se  o  acompanhamento  sistemático  e  contínuo  dos \ndemais egressos do programa."
+            }
+        ]
+    },
+    {
+        "tabela_id": 13,
+        "pagina": 13,
+        "dados": [
+            {
+                "0": "2.3. \nQualidade \nda \nprodução \nintelectual \nde \ndiscentes \ne \negressos do Programa.",
+                "1": "30%",
+                "2": "O programa será avaliado considerando:  \n● \nos resultados dos trabalhos de mestrado \naplicados/aplicáveis nos arranjos produtivos por meio \nde transferência de tecnologia, software, técnicas, \nmétodos, etc. ou na geração de inovação (produtos, \nserviços) que auxiliem empresas públicas e privadas \nno aumento da produtividade e melhoria da qualidade \nde suas atividades;  \n● \na qualidade dos trabalhos científicos e técnicos \nproduzidos com a participação discente. \nPara  a  produção \nintelectual  discente  serão  considerados  os \nartigos completos em periódicos, eventos e produtos técnicos \ncom  participação  discente \n(ou  de  egressos  até  5  anos, \nconsiderando o ano da publicação). O percentual de alunos que \nparticipam  das  melhores  produções \n(ANEXOS  3  e  4)  e  o \npercentual de alunos com produções qualificadas será utilizado \ncomo base para a avaliação deste item.  \nPara a produção técnica será considerado o que está na Seção \n2.2 do Documento de Área. A cada produto técnico existente no \nANEXO 4 será atribuído um nível, de maneira qualitativa. \nPara  a  análise  qualitativa,  a  produção  discente  existente  nos \nANEXO  3  –  4N  produções  mais  relevantes  e  ANEXO  4  -  M \nproduções técnicas mais relevantes serão consideradas, onde \nN  é  a  média  de  docentes  permanentes  na  quadrienal  e  M  é  o \nmaior valor entre 10 e N/4. Esta análise influenciará o conceito \ndeste item."
+            },
+            {
+                "0": "2.4.  Qualidade  das  atividades  de \npesquisa \ne \nda \nprodução \nintelectual  do  corpo      docente  do \nPrograma.",
+                "1": "30%",
+                "2": "Para  a  produção \nintelectual  docente  serão  considerados  os \nartigos  completos  em  periódicos  e  eventos,  livros  e  produção \ntécnica \nlistados \nnos \nANEXOS \n3 \n(bibliográfica) \ne \n4 \n(técnica/tecnológica).  Os \níndices  serão  analisados  na  sua \ntotalidade \n(volume)  e  ponderados  por  número  de  docentes \npermanentes da seguinte forma: \nProdução Bibliográfica do ANEXO 3: \nProdBibliográficatotal  =  #A1+#A2x0,875+#A3x0,75+#A4x0,625  + \n#L1 + #L2x0,8 + #L3x0,6 + #CL1x0,5 \nProdBibliográficaponderado = ProdBibliográficatotal/N \nProdução Técnica do ANEXO 4: \nProdTécnicatotal = #T1+#T2x0,8+#T3x0,6 \nProdTécnicaponderado = ProdTécnicatotal/N \nEm que, #A1 é o número de artigos completos em periódicos ou \nem  eventos,  #L1  é  o  número  de  livros  classificados,  #CL1  é \nnúmero de capítulos de livros classificados e #T1  é o número de \nprodutos \ntécnicos, \ntodos \nclassificados \nno \nnível \n1 \nde \nestratificação  da  Área,  e  assim  por  diante.  N  é  a  média  no"
+            }
+        ]
+    },
+    {
+        "tabela_id": 14,
+        "pagina": 14,
+        "dados": [
+            {
+                "0": "",
+                "1": "",
+                "2": "quadriênio de docentes permanentes do programa, sem contar \nos \nProfessores \n(Docentes) \nPermanentes \nJunior \n(PPJ) \ne \nProfessores (Docentes) Permanentes Sênior (PPS) (ANEXO 2). \nEstes indicadores serão utilizados como base quantitativa para \nanálise  do \nitem.  A  Área  utiliza  a  mediana  como  base  para \nqualificar este item.  Programas acima da mediana na produção \nbibliográfica  e  técnica  terão  conceito  Muito  Bom  se  estiverem \nentre  os  20%  melhores,  Bom  se  estiverem  entre  os  50% \nmelhores,  Regular  se  estiver  abaixo  da  mediana  mas  entre  os \n70%  melhores.  Os \nconceitos \nFraco \ne \nInsuficiente \nserão \natribuídos  aos  programas  que  estiverem  entre  os  30%  e  10% \npiores respectivamente. Estes conceitos poderão ser alterados \ndependendo dos aspectos qualitativos mencionados a seguir. \nO  corpo  docente  deve  apresentar  qualidade,  quantidade  e \nregularidade das produções intelectuais. Estes aspectos serão \nanalisados de maneira qualitativa. \nA qualificação das produções intelectuais seguirá o descrito no \nDocumento de Área e, também, uma análise qualitativa nas 4N \nproduções bibliográficas e M produções técnicas selecionadas \npelos programas (ANEXO 3 e ANEXO 4). \nO programa deve apresentar uma distribuição homogênea das \nproduções  intelectuais  pelos  docentes  e  linhas  de  pesquisa, \ncom qualidade e regularidade.  \nDeve  existir  boa  distribuição  dos  docentes  em  projetos  de \npesquisa \ninstitucionais \ne \nde \ncooperação \nnacional \ne \ninternacional. No escopo da avaliação, um projeto deve ter apoio \nfinanceiro. \nValorizam-se \nprojetos \ninstitucionais, \nprojetos \nque \ntragam \nrecursos e projetos de intercâmbio, nacionais, internacionais e \niniciativas bem-sucedidas de transferência para a sociedade de \nconhecimento \ngerado  no  programa.  Os \nrelatórios  devem \nressaltar tais iniciativas."
+            },
+            {
+                "0": "3 – Impacto (local, regional, nacional, internacional)",
+                "1": "",
+                "2": ""
+            },
+            {
+                "0": "3.1. \nInserção, \nvisibilidade, \npopularização da ciência.",
+                "1": "25%",
+                "2": "Os indicadores mencionados no Documento de Área na Seção \n3 serão utilizados neste item.  \nPara os programas profissionais devem haver cooperações com \nentidades  ou  empresas  públicas  ou  privadas,  demonstrando \nsua inserção (local, regional ou nacional). \nO programa deve manter página Web (em mais de uma língua \nalém  do  português,  preferencialmente \ninglês),  de \nforma \natualizada,  de  seus  dados \ninternos,  critérios  de  seleção  de \nalunos, \nparte \nsignificativa \nde \nsua \nprodução \ndocente, \nfinanciamentos \nrecebidos  da  CAPES  e  de  outras  agências"
+            }
+        ]
+    },
+    {
+        "tabela_id": 15,
+        "pagina": 15,
+        "dados": [
+            {
+                "0": "",
+                "1": "",
+                "2": "públicas  e  entidades  privadas.  Além  disso,  o  programa  deve \ngarantir amplo acesso a teses e dissertações pela Web. \nAtividades \nvoltadas \nà \ninternacionalização \n(Seção \n3.2 \ndo \nDocumento  de  Área),  com  participação  dos  docentes  e \ndiscentes  são  valorizadas.  Colaborações  com  setores  para \nexportação de produtos e serviços também são valorizadas. \nAtividades  de  valorização  da  ciência  devem  ser  descritas  e \nserão consideradas pela  Área."
+            },
+            {
+                "0": "3.2. \nInovação, \ntransferência \ne \ncompartilhamento \nde \nconhecimento.",
+                "1": "30%",
+                "2": "O programa será avaliado: \n● \npela formação de recursos humanos qualificados \npara a sociedade; \n● \ncontribuição para o desenvolvimento \nsocioeconômico, destacando os avanços produtivos, \ndisseminação de técnicas e conhecimentos, além de \nempreendedorismo \nValoriza-se ainda: \n● \na contribuição para a melhoria do ensino básico e de \ngraduação e para o desenvolvimento de propostas \ninovadoras de ensino;  \n● \ncontribuições para o desenvolvimento local e \nregional, com destaque para os avanços gerados no \nsetor empresarial;  \n● \na disseminação de técnicas e de conhecimentos;  \n● \ncontribuição para maior eficiência nas organizações \npúblicas ou privadas, tanto de forma direta como \nindireta;  \n● \ncontribuição para a formação de profissionais que \npossam introduzir mudanças na forma como vem \nsendo exercida a profissão, com avanços \nreconhecidos pela categoria profissional.   \nEsses \naspectos \ndevem \nestar \ndestacados \nna \nplataforma \nSucupira de maneira clara. \nValoriza-se  a  participação  em  programas  de  cooperação  e \nintercâmbio  sistemáticos  e  a  participação  em  projetos  de \ncooperação  entre  programas  com  níveis  de  consolidação \ndiferentes, \nvoltados  para  a \ninovação  na  pesquisa  ou  o \ndesenvolvimento da pós-graduação em regiões ou sub-regiões \ngeográficas  menos  aquinhoadas \n(atuação  de  professores \nvisitantes, turmas fora de sede ou outros tipos de atividades). \nValoriza-se  a  participação  em  convênios  ou  programas  de \ncooperação \ncom \norganizações \nou \ninstituições \nsetoriais, \nvoltados  para  a \ninovação  na  pesquisa,  o  avanço  da  pós-\ngraduação ou o desenvolvimento tecnológico, econômico e/ou \nsocial no respectivo setor ou região. Valorizam-se, também, a \nabrangência  e  a  quantidade  de  organizações  ou  instituições  a"
+            }
+        ]
+    },
+    {
+        "tabela_id": 16,
+        "pagina": 16,
+        "dados": [
+            {
+                "0": "",
+                "1": "",
+                "2": "que  estão  vinculados  os  alunos;  e  a \nintrodução  de  novos \nprodutos \nou \nserviços \n(educacionais, \ntecnológicos, \ndiagnósticos,  etc.),  no  âmbito  do  Programa,  que  contribuam \npara o desenvolvimento local, regional ou nacional."
+            },
+            {
+                "0": "3.3. Impactos do Programa para a \nsociedade.",
+                "1": "45%",
+                "2": "Neste item serão considerados: \n● \npremiações, artigos ou teses que geraram produtos ou \nnovos empreendimentos (ANEXO 5);  \n● \nos M casos de sucesso do programa serão \nconsiderados neste item (ANEXO 6, onde M é o maior \nvalor entre 10 e N/4, sendo N o número médio de \ndocentes permanentes do programa); e  \n● \nas produções qualificadas existentes nos ANEXOS 3 e \n4 que tenham algum tipo de impacto serão analisadas \nconsiderando a justificativa apresentada pelo \nprograma.   \nAlém disso, os indicadores nos Itens 2.3 e 2.4, também serão \nutilizados para análise dos produtos apresentados."
+            }
+        ]
+    }
+]

@@ -39,7 +39,7 @@ def run_analysis_flow_with_tracking(
     png_file: str = None,
     csv_file: str = None,
     output_prefix: str = None,
-    model: str = "gemini",
+    model: str = "ollama",
 ) -> dict:
     """
     Async task to run APOEMA Flow analysis with database tracking.
