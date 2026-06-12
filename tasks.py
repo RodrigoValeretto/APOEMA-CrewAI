@@ -8,34 +8,27 @@ The workflow:
 4. Each task completion in flow triggers callback → saves result to DB
 5. Task updates final status to 'completed' or 'failed'
 """
-import dramatiq
 import os
+import dramatiq
 from datetime import datetime
 import asyncio
 import traceback
+
+# Configure RabbitMQ broker BEFORE defining actors
+# This must happen before @dramatiq.actor decorators are processed
+from dramatiq.brokers.rabbitmq import RabbitmqBroker
+
+rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+broker = RabbitmqBroker(url=rabbitmq_url)
+dramatiq.set_broker(broker)
+
+# Now import the modules that use dramatiq
 from apoema_flow import run_apoema_flow
 from apoema_agent import run_apoema_pipeline
 from db_manager import (
     update_analysis_status,
     save_analysis_result,
 )
-
-# Configure RabbitMQ broker
-# The dramatiq CLI will handle broker configuration using environment variables
-rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672//")
-
-# Set the broker URL in environment for dramatiq CLI
-# This is used when running: dramatiq tasks
-os.environ.setdefault("DRAMATIQ_BROKER_URL", rabbitmq_url)
-
-# For direct usage, configure the broker if available
-try:
-    from dramatiq.brokers.rabbitmq import RabbitMQBroker
-    broker = RabbitMQBroker(url=rabbitmq_url)
-    dramatiq.set_broker(broker)
-except (ImportError, AttributeError, TypeError):
-    # If broker import fails, that's okay - the CLI will configure it
-    pass
 
 
 @dramatiq.actor(max_retries=0)

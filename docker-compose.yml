@@ -73,6 +73,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-apoema_dev_password}
       DB_NAME: ${DB_NAME:-apoema_db}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
+      DRAMATIQ_BROKER_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
       PYTHONUNBUFFERED: 1
     depends_on:
       postgres:
