@@ -10,7 +10,7 @@ from apoema_agent import (
 
 
 class ApoemaFlow(Flow):
-    stream = True
+    stream = False  # Use synchronous execution since Dramatiq workers handle async
     verbose = False
 
     """
@@ -218,7 +218,7 @@ class ApoemaFlow(Flow):
         return self.state
 
 
-async def run_apoema_flow(
+def run_apoema_flow(
     assessment_file,
     pdf_path,
     output_prefix,
@@ -256,9 +256,6 @@ async def run_apoema_flow(
     )
 
     flow.plot()
-    streaming = flow.kickoff_async()
+    result = flow.kickoff()
 
-    async for chunk in await streaming:
-        print("Processing....", end="\n", flush=True)
-
-    return streaming.result
+    return result

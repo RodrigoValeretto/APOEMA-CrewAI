@@ -11,15 +11,27 @@ The workflow:
 import os
 import dramatiq
 from datetime import datetime
-import asyncio
 import traceback
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Configure RabbitMQ broker BEFORE defining actors
 # This must happen before @dramatiq.actor decorators are processed
 from dramatiq.brokers.rabbitmq import RabbitmqBroker
 
 rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
-broker = RabbitmqBroker(url=rabbitmq_url)
+
+# Configure RabbitMQ broker
+# Using URL parameter is simplest and avoids pika parameter conflicts
+broker = RabbitmqBroker(
+    url=rabbitmq_url,
+)
 dramatiq.set_broker(broker)
 
 # Now import the modules that use dramatiq
@@ -31,7 +43,13 @@ from db_manager import (
 )
 
 
-@dramatiq.actor(max_retries=0)
+@dramatiq.actor(
+    max_retries=2,
+    time_limit=900000,  # 15 minutes in milliseconds (for safety buffer above 10min analysis)
+    min_backoff=1000,   # 1 second
+    max_backoff=30000,  # 30 seconds
+    priority=0,         # Normal priority
+)
 def run_analysis_flow_with_tracking(
     analysis_id: int,
     assessment_file: str,
@@ -65,8 +83,10 @@ def run_analysis_flow_with_tracking(
         Dictionary with analysis info
     """
     try:
+        logger.info(f"[Analysis {analysis_id}] Starting APOEMA Flow analysis with model={model}")
         # Update status to processing
         update_analysis_status(analysis_id, "processing")
+        logger.info(f"[Analysis {analysis_id}] Status updated to 'processing'")
 
         # Create callback that saves results to database
         def on_task_complete(task_name: str, result: str):
@@ -77,26 +97,28 @@ def run_analysis_flow_with_tracking(
                     task_name=task_name,
                     result=result,
                 )
-                print(f"✓ Saved result for {task_name}")
+                logger.info(f"[Analysis {analysis_id}] ✓ Saved result for task: {task_name}")
             except Exception as e:
-                print(f"✗ Failed to save result for {task_name}: {str(e)}")
+                logger.error(f"[Analysis {analysis_id}] ✗ Failed to save result for {task_name}: {str(e)}")
 
         # Run the APOEMA Flow with callback
-        result = asyncio.run(
-            run_apoema_flow(
-                assessment_file=assessment_file,
-                pdf_path=pdf_file,
-                output_prefix=output_prefix,
-                png_path=png_file,
-                csv_path=csv_file,
-                model=model,
-                analysis_id=analysis_id,
-                on_task_complete=on_task_complete,
-            )
+        # Note: run_apoema_flow is synchronous - Dramatiq workers already handle async execution
+        logger.info(f"[Analysis {analysis_id}] Running CrewAI flow (max 15 minutes timeout)")
+        analysis_result = run_apoema_flow(
+            assessment_file=assessment_file,
+            pdf_path=pdf_file,
+            output_prefix=output_prefix,
+            png_path=png_file,
+            csv_path=csv_file,
+            model=model,
+            analysis_id=analysis_id,
+            on_task_complete=on_task_complete,
         )
+        logger.info(f"[Analysis {analysis_id}] CrewAI flow completed successfully")
 
         # Update analysis status to completed
         update_analysis_status(analysis_id, "completed")
+        logger.info(f"[Analysis {analysis_id}] Analysis marked as completed")
 
         return {
             "analysis_id": analysis_id,
@@ -105,6 +127,8 @@ def run_analysis_flow_with_tracking(
         }
 
     except Exception as e:
+        logger.error(f"[Analysis {analysis_id}] ✗ Analysis failed with error: {str(e)}")
+        logger.error(f"[Analysis {analysis_id}] Traceback:\n{traceback.format_exc()}")
         # Update analysis status to failed
         update_analysis_status(analysis_id, "failed")
         save_analysis_result(
@@ -115,7 +139,13 @@ def run_analysis_flow_with_tracking(
         raise e
 
 
-@dramatiq.actor(max_retries=0)
+@dramatiq.actor(
+    max_retries=2,
+    time_limit=900000,  # 15 minutes in milliseconds (for safety buffer above 10min analysis)
+    min_backoff=1000,   # 1 second
+    max_backoff=30000,  # 30 seconds
+    priority=0,         # Normal priority
+)
 def run_analysis_crew_with_tracking(
     analysis_id: int,
     assessment_file: str,
@@ -141,8 +171,10 @@ def run_analysis_crew_with_tracking(
         Dictionary with analysis info
     """
     try:
+        logger.info(f"[Analysis {analysis_id}] Starting APOEMA Crew analysis with model={model}")
         # Update status to processing
         update_analysis_status(analysis_id, "processing")
+        logger.info(f"[Analysis {analysis_id}] Status updated to 'processing'")
 
         # Create callback that saves results to database
         def on_task_complete(task_name: str, result: str):
@@ -153,12 +185,13 @@ def run_analysis_crew_with_tracking(
                     task_name=task_name,
                     result=result,
                 )
-                print(f"✓ Saved result for {task_name}")
+                logger.info(f"[Analysis {analysis_id}] ✓ Saved result for task: {task_name}")
             except Exception as e:
-                print(f"✗ Failed to save result for {task_name}: {str(e)}")
+                logger.error(f"[Analysis {analysis_id}] ✗ Failed to save result for {task_name}: {str(e)}")
 
         # Run the APOEMA Crew (traditional)
-        result = run_apoema_pipeline(
+        logger.info(f"[Analysis {analysis_id}] Running CrewAI crew (max 15 minutes timeout)")
+        crew_result = run_apoema_pipeline(
             assessment_file=assessment_file,
             pdf_path=pdf_file,
             output_prefix=output_prefix,
@@ -166,16 +199,19 @@ def run_analysis_crew_with_tracking(
             csv_path=csv_file,
             model=model,
         )
+        logger.info(f"[Analysis {analysis_id}] CrewAI crew completed successfully")
 
         # Save final result
         save_analysis_result(
             analysis_id,
             "crew_completion",
-            str(result),
+            str(crew_result),
         )
+        logger.info(f"[Analysis {analysis_id}] Final result saved")
 
         # Update analysis status to completed
         update_analysis_status(analysis_id, "completed")
+        logger.info(f"[Analysis {analysis_id}] Analysis marked as completed")
 
         return {
             "analysis_id": analysis_id,
@@ -184,6 +220,8 @@ def run_analysis_crew_with_tracking(
         }
 
     except Exception as e:
+        logger.error(f"[Analysis {analysis_id}] ✗ Analysis failed with error: {str(e)}")
+        logger.error(f"[Analysis {analysis_id}] Traceback:\n{traceback.format_exc()}")
         # Update analysis status to failed
         update_analysis_status(analysis_id, "failed")
         save_analysis_result(

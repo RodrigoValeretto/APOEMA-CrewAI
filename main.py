@@ -1,6 +1,5 @@
 import os
 import argparse
-import asyncio
 from datetime import datetime
 from apoema_agent import run_apoema_pipeline
 from apoema_flow import run_apoema_flow
@@ -116,12 +115,10 @@ def main():
     # Execute based on selected mode
     if exec_mode == "crew":
         # Traditional Crew execution
-        result = run_apoema_pipeline(assessment_file, pdf_path, output_prefix, png_path, csv_path, model)
+        run_apoema_pipeline(assessment_file, pdf_path, output_prefix, png_path, csv_path, model)
     else:
         # Flow-based execution
-        result = asyncio.run(
-            run_apoema_flow(assessment_file, pdf_path, output_prefix, png_path, csv_path, model)
-        )
+        run_apoema_flow(assessment_file, pdf_path, output_prefix, png_path, csv_path, model)
 
     print("\n" + "=" * 80)
     print("EXECUÇÃO CONCLUÍDA")

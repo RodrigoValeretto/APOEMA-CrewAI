@@ -81,7 +81,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: apoema-dramatiq-worker
-    command: dramatiq tasks
+    command: dramatiq --verbose tasks
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
@@ -92,6 +92,14 @@ services:
       DRAMATIQ_BROKER_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
       OLLAMA_HOST: http://ollama:11434
       PYTHONUNBUFFERED: 1
+      # Task timeout configuration
+      TASK_TIMEOUT_MINUTES: ${TASK_TIMEOUT_MINUTES:-15}
+      # Dramatiq worker configuration
+      DRAMATIQ_WORKER_TIMEOUT: ${DRAMATIQ_WORKER_TIMEOUT:-900}
+      DRAMATIQ_WORKER_MAX_RETRIES: ${DRAMATIQ_WORKER_MAX_RETRIES:-2}
+      DRAMATIQ_PREFETCH_COUNT: ${DRAMATIQ_PREFETCH_COUNT:-1}
+      # Disable forking to keep long-running tasks alive
+      DRAMATIQ_FORK_WORKERS: "false"
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,6 +113,15 @@ services:
       - ./:/app
     networks:
       - apoema_network
+    # Healthcheck to monitor worker process
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "dramatiq tasks"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # Increase stop timeout to allow graceful shutdown of long-running tasks
+    stop_grace_period: 120s
 
   # FastAPI application (API server)
   app:

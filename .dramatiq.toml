@@ -3,3 +3,11 @@ broker = "dramatiq.brokers.rabbitmq:RabbitMQBroker"
 
 [dramatiq.options]
 url = "amqp://guest:guest@rabbitmq:5672//"
+
+[dramatiq.broker_options]
+# Consumer settings for long-running tasks
+prefetch_count = 1  # Process only 1 message at a time
+prefetch_size = 0   # No byte limit
+
+# Connection settings
+confirm_publish = true  # Confirm when message is published
