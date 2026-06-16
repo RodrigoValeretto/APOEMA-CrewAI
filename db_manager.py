@@ -16,6 +16,8 @@ from api.database import (
     get_analysis_file as db_get_analysis_file,
     delete_analysis_file as db_delete_analysis_file,
     count_completed_results as db_count_completed_results,
+    count_processing_analyses as db_count_processing_analyses,
+    count_older_pending_analyses as db_count_older_pending_analyses,
 )
 from api.exceptions import AnalysisNotFound, DatabaseError
 from api.constants import AnalysisStatus
@@ -162,3 +164,13 @@ def get_analysis_results(
 def delete_analysis(analysis_id: int) -> None:
     """Delete an analysis"""
     get_db_manager().delete_analysis(analysis_id)
+
+
+def count_processing_analyses(exclude_analysis_id: Optional[int] = None) -> int:
+    """Count analyses currently being processed"""
+    return db_count_processing_analyses(exclude_analysis_id)
+
+
+def count_older_pending_analyses(analysis_id: int) -> int:
+    """Count analyses older (lower ID) that are still pending or processing"""
+    return db_count_older_pending_analyses(analysis_id)

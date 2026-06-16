@@ -55,7 +55,9 @@ from .validators import (
     validate_model_choice,
 )
 from . import database, file_manager
-from tasks import run_analysis_flow_with_tracking, run_analysis_crew_with_tracking
+from tasks import (
+    enqueue_analysis_for_sequential_processing,
+)
 
 
 config = get_config()
@@ -196,8 +198,8 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         if not csv_path and request.csv_file_id:
             csv_path = file_manager.get_file_path(request.csv_file_id)
 
-        # Submit Dramatiq task
-        run_analysis_flow_with_tracking.send(
+        # Submit Dramatiq task (via queue manager for sequential processing)
+        enqueue_analysis_for_sequential_processing.send(
             analysis_id=analysis_id,
             assessment_file=assessment_file,
             pdf_file=pdf_path,

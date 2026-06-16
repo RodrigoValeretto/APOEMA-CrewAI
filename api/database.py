@@ -401,3 +401,67 @@ def count_completed_results(analysis_id: int) -> int:
                 return count
     except psycopg.Error as e:
         raise DatabaseError(f"Failed to count results: {str(e)}")
+
+
+def count_processing_analyses(exclude_analysis_id: Optional[int] = None) -> int:
+    """
+    Count number of analyses currently being processed
+
+    Args:
+        exclude_analysis_id: Optional analysis ID to exclude from count (for checking if others are processing)
+
+    Returns:
+        Count of analyses in 'processing' status
+
+    Raises:
+        DatabaseError: If database operation fails
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                if exclude_analysis_id:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM analysis WHERE status = 'processing' AND id != %s",
+                        (exclude_analysis_id,),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM analysis WHERE status = 'processing'"
+                    )
+                count = cur.fetchone()[0]
+                return count
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to count processing analyses: {str(e)}")
+
+
+def count_older_pending_analyses(analysis_id: int) -> int:
+    """
+    Count number of analyses that are older (lower ID) and still pending/processing
+
+    This enforces FIFO ordering: an analysis can only be processed if all older
+    analyses have already been completed.
+
+    Args:
+        analysis_id: ID of current analysis to check
+
+    Returns:
+        Count of analyses with lower IDs that are not completed
+
+    Raises:
+        DatabaseError: If database operation fails
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) FROM analysis
+                    WHERE id < %s
+                    AND status IN ('pending', 'processing', 'queued')
+                    """,
+                    (analysis_id,),
+                )
+                count = cur.fetchone()[0]
+                return count
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to count older pending analyses: {str(e)}")

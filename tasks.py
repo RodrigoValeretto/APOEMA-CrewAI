@@ -40,7 +40,131 @@ from apoema_agent import run_apoema_pipeline
 from db_manager import (
     update_analysis_status,
     save_analysis_result,
+    count_processing_analyses,
+    count_older_pending_analyses,
 )
+
+
+@dramatiq.actor(
+    max_retries=10,  # Increased retries for queue management (10 retries with backoff = good time buffer)
+    time_limit=30000,  # 30 seconds timeout for the queueing logic
+    min_backoff=2000,   # 2 seconds initial backoff
+    max_backoff=30000,  # 30 seconds max backoff
+    priority=10,        # Higher priority for queue management
+)
+def enqueue_analysis_for_sequential_processing(
+    analysis_id: int,
+    assessment_file: str,
+    pdf_file: str = None,
+    png_file: str = None,
+    csv_file: str = None,
+    output_prefix: str = None,
+    model: str = "ollama",
+) -> dict:
+    """
+    Intermediate task that manages sequential processing of analyses.
+
+    This task ensures only ONE analysis is processing at a time:
+    1. Checks if any OTHER analysis is currently processing
+    2. If not → marks this analysis as processing and calls run_analysis_flow_with_tracking
+    3. If yes → requeues itself with a delay (exponential backoff)
+
+    This prevents multiple analyses from running concurrently by using database state
+    as a coordination point, without modifying the database schema.
+
+    Args:
+        analysis_id: ID of analysis (created by API)
+        assessment_file: Path to assessment JSON file
+        pdf_file: Path to PDF report file (optional)
+        png_file: Path to PNG image file (optional)
+        csv_file: Path to CSV data file (optional)
+        output_prefix: Prefix for output files
+        model: Model to use (gemini, ollama)
+
+    Returns:
+        Dictionary with queue status or result of actual processing
+    """
+    try:
+        logger.info(f"[Analysis {analysis_id}] Checking sequential processing queue (FIFO)...")
+
+        # Check 1: If any OTHER analysis is currently processing
+        processing_count = count_processing_analyses(exclude_analysis_id=analysis_id)
+
+        # Check 2: FIFO ordering - if there are older (lower ID) analyses still pending/processing
+        older_pending_count = count_older_pending_analyses(analysis_id)
+
+        if processing_count > 0 or older_pending_count > 0:
+            # Either another analysis is processing OR there are older analyses waiting
+            # Requeue this one with delay
+            reason = ""
+            if processing_count > 0:
+                reason = f"{processing_count} analysis(es) currently processing"
+            if older_pending_count > 0:
+                if reason:
+                    reason += f" and {older_pending_count} older analysis(es) pending"
+                else:
+                    reason = f"{older_pending_count} older analysis(es) pending (FIFO)"
+
+            logger.info(
+                f"[Analysis {analysis_id}] {reason}. "
+                f"Requeuing with exponential backoff..."
+            )
+            # Requeue by calling itself again - Dramatiq will apply backoff
+            enqueue_analysis_for_sequential_processing.send_with_options(
+                kwargs={
+                    "analysis_id": analysis_id,
+                    "assessment_file": assessment_file,
+                    "pdf_file": pdf_file,
+                    "png_file": png_file,
+                    "csv_file": csv_file,
+                    "output_prefix": output_prefix,
+                    "model": model,
+                },
+                delay=2000,  # 2 second delay before retry (Dramatiq will add exponential backoff)
+            )
+            return {
+                "analysis_id": analysis_id,
+                "status": "queued",
+                "message": f"Queued for processing. {reason}",
+            }
+
+        # No other analysis processing, proceed with actual processing
+        logger.info(f"[Analysis {analysis_id}] Queue is clear, starting processing...")
+        result = run_analysis_flow_with_tracking.send(
+            analysis_id=analysis_id,
+            assessment_file=assessment_file,
+            pdf_file=pdf_file,
+            png_file=png_file,
+            csv_file=csv_file,
+            output_prefix=output_prefix,
+            model=model,
+        )
+
+        return {
+            "analysis_id": analysis_id,
+            "status": "processing",
+            "message": "Analysis started processing",
+        }
+
+    except Exception as e:
+        logger.error(f"[Analysis {analysis_id}] ✗ Queue management failed: {str(e)}")
+        logger.error(f"[Analysis {analysis_id}] Traceback:\n{traceback.format_exc()}")
+        # Still try to process - don't let queueing fail the analysis
+        logger.info(f"[Analysis {analysis_id}] Attempting direct processing despite queueing error...")
+        result = run_analysis_flow_with_tracking.send(
+            analysis_id=analysis_id,
+            assessment_file=assessment_file,
+            pdf_file=pdf_file,
+            png_file=png_file,
+            csv_file=csv_file,
+            output_prefix=output_prefix,
+            model=model,
+        )
+        return {
+            "analysis_id": analysis_id,
+            "status": "processing",
+            "message": "Analysis started processing (after queueing error)",
+        }
 
 
 @dramatiq.actor(
