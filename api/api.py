@@ -169,20 +169,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         # Validate model
         validate_model_choice(request.model)
 
-        # Determine workflow type
-        workflow_type = determine_workflow_type(
-            request.pdf_path or (request.pdf_file_id and f"file_{request.pdf_file_id}"),
-            request.png_path or (request.png_file_id and f"file_{request.png_file_id}"),
-            request.csv_path or (request.csv_file_id and f"file_{request.csv_file_id}"),
-        )
-
-        # Create analysis record
-        analysis_id = database.create_analysis(
-            analysis_type=workflow_type,
-            status=AnalysisStatus.PENDING.value,
-        )
-
-        # Get file paths (resolve file IDs if needed)
+        # Resolve file IDs to actual paths (needed for workflow type determination)
         assessment_file = request.assessment_file
         if not assessment_file and request.assessment_file_id:
             assessment_file = file_manager.get_file_path(request.assessment_file_id)
@@ -198,6 +185,19 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         csv_path = request.csv_path
         if not csv_path and request.csv_file_id:
             csv_path = file_manager.get_file_path(request.csv_file_id)
+
+        # Determine workflow type (with resolved file paths)
+        workflow_type = determine_workflow_type(
+            pdf_path,
+            png_path,
+            csv_path,
+        )
+
+        # Create analysis record
+        analysis_id = database.create_analysis(
+            analysis_type=workflow_type,
+            status=AnalysisStatus.PENDING.value,
+        )
 
         # Submit Dramatiq task (via queue manager for sequential processing)
         enqueue_analysis_for_sequential_processing.send(
