@@ -90,6 +90,32 @@ class FileUploadRequest(BaseModel):
     }
 
 
+class FileDownloadRequest(BaseModel):
+    """Request model for downloading files from URL"""
+
+    url: str = Field(
+        ...,
+        description="URL of the file to download",
+        examples=["https://example.com/image.png"],
+    )
+    file_type: FileType = Field(
+        ..., description="Type of file being downloaded"
+    )
+    analysis_id: Optional[int] = Field(
+        None,
+        description="Optional analysis ID to associate downloaded file with",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "url": "https://example.com/plot.png",
+                "file_type": "png",
+            }
+        }
+    }
+
+
 # Response Models
 class AnalysisResponse(BaseModel):
     """Response model for analysis creation"""

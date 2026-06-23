@@ -36,6 +36,7 @@ from .models import (
     ResultsResponse,
     TaskResult,
     ProgressInfo,
+    FileDownloadRequest,
 )
 from .constants import (
     AnalysisType,
@@ -564,6 +565,52 @@ async def upload_csv_file(
             file,
             FileType.CSV,
             analysis_id,
+        )
+
+        file_record = database.get_analysis_file(file_id)
+
+        return FileUploadResponse(
+            id=file_record["id"],
+            filename=file_record["file_name"],
+            file_type=file_record["file_type"],
+            size=file_record["file_size"],
+            created_at=file_record["created_at"],
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/files/download-from-url",
+    response_model=FileUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Files"],
+)
+async def download_file_from_url(
+    request: FileDownloadRequest,
+):
+    """
+    Download a file from a URL and save it to the system
+
+    Args:
+        request: Download request with URL, file type, and optional analysis ID
+
+    Returns:
+        File metadata with ID
+
+    Raises:
+        InvalidAnalysisInput: If URL is invalid
+        URLFetchError: If download fails
+    """
+    try:
+        file_id, file_path = await file_manager.download_file_from_url(
+            request.url,
+            request.file_type,
+            request.analysis_id,
         )
 
         file_record = database.get_analysis_file(file_id)

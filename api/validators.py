@@ -271,3 +271,63 @@ def validate_uploaded_file(
 
     except Exception as e:
         return False, str(e)
+
+
+def validate_url(url: str) -> bool:
+    """
+    Validate that a URL is safe and properly formatted
+
+    Args:
+        url: URL to validate
+
+    Returns:
+        True if URL is valid
+
+    Raises:
+        InvalidAnalysisInput: If URL is invalid or not HTTPS/HTTP
+    """
+    from urllib.parse import urlparse
+    import ipaddress
+
+    if not url:
+        raise InvalidAnalysisInput("URL cannot be empty")
+
+    try:
+        parsed = urlparse(url)
+
+        # Check protocol
+        if parsed.scheme not in ("http", "https"):
+            raise InvalidAnalysisInput(
+                f"Invalid protocol: {parsed.scheme}. Only http and https are allowed."
+            )
+
+        # Check hostname exists
+        if not parsed.netloc:
+            raise InvalidAnalysisInput("Invalid URL: missing hostname")
+
+        # Extract hostname without port
+        hostname = parsed.hostname or parsed.netloc
+
+        # Reject localhost and 127.0.0.1 (SSRF protection)
+        if hostname in ("localhost", "127.0.0.1", "0.0.0.0"):
+            raise InvalidAnalysisInput(
+                f"URL cannot point to localhost or loopback address: {hostname}"
+            )
+
+        # Reject private IP ranges (SSRF protection)
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local:
+                raise InvalidAnalysisInput(
+                    f"URL cannot point to private or reserved IP address: {hostname}"
+                )
+        except ValueError:
+            # Not an IP address, that's OK
+            pass
+
+        return True
+
+    except InvalidAnalysisInput:
+        raise
+    except Exception as e:
+        raise InvalidAnalysisInput(f"Invalid URL: {str(e)}")
