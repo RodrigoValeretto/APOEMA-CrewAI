@@ -130,6 +130,70 @@ async def health_check():
     )
 
 
+# Helper function for resolving file sources
+async def resolve_file_sources(request: AnalysisRequest) -> dict:
+    """
+    Resolve file sources by downloading from URLs if provided, otherwise using paths or file IDs.
+
+    Args:
+        request: AnalysisRequest with file specifications
+
+    Returns:
+        Dictionary with resolved file paths: {
+            'assessment_file': str or None,
+            'pdf_path': str or None,
+            'png_path': str or None,
+            'csv_path': str or None,
+        }
+    """
+    resolved = {
+        'assessment_file': request.assessment_file,
+        'pdf_path': request.pdf_path,
+        'png_path': request.png_path,
+        'csv_path': request.csv_path,
+    }
+
+    # Download from URLs if provided
+    if request.assessment_file_url:
+        _, resolved['assessment_file'] = await file_manager.download_file_from_url(
+            request.assessment_file_url,
+            FileType.ASSESSMENT,
+        )
+
+    if request.pdf_url:
+        _, resolved['pdf_path'] = await file_manager.download_file_from_url(
+            request.pdf_url,
+            FileType.PDF,
+        )
+
+    if request.png_url:
+        _, resolved['png_path'] = await file_manager.download_file_from_url(
+            request.png_url,
+            FileType.PNG,
+        )
+
+    if request.csv_url:
+        _, resolved['csv_path'] = await file_manager.download_file_from_url(
+            request.csv_url,
+            FileType.CSV,
+        )
+
+    # Resolve file IDs to actual paths (for paths not set by URLs)
+    if not resolved['assessment_file'] and request.assessment_file_id:
+        resolved['assessment_file'] = file_manager.get_file_path(request.assessment_file_id)
+
+    if not resolved['pdf_path'] and request.pdf_file_id:
+        resolved['pdf_path'] = file_manager.get_file_path(request.pdf_file_id)
+
+    if not resolved['png_path'] and request.png_file_id:
+        resolved['png_path'] = file_manager.get_file_path(request.png_file_id)
+
+    if not resolved['csv_path'] and request.csv_file_id:
+        resolved['csv_path'] = file_manager.get_file_path(request.csv_file_id)
+
+    return resolved
+
+
 # Analysis endpoints
 @app.post(
     "/api/analysis",
@@ -151,16 +215,20 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         InvalidAnalysisInput: If input is invalid
     """
     try:
-        # Validate input
+        # Validate input (including URLs)
         is_valid, error_msg = validate_analysis_request(
             assessment_file=request.assessment_file,
             assessment_file_id=request.assessment_file_id,
+            assessment_file_url=request.assessment_file_url,
             pdf_path=request.pdf_path,
             pdf_file_id=request.pdf_file_id,
+            pdf_url=request.pdf_url,
             png_path=request.png_path,
             png_file_id=request.png_file_id,
+            png_url=request.png_url,
             csv_path=request.csv_path,
             csv_file_id=request.csv_file_id,
+            csv_url=request.csv_url,
             model=request.model,
         )
         if not is_valid:
@@ -169,22 +237,12 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         # Validate model
         validate_model_choice(request.model)
 
-        # Resolve file IDs to actual paths (needed for workflow type determination)
-        assessment_file = request.assessment_file
-        if not assessment_file and request.assessment_file_id:
-            assessment_file = file_manager.get_file_path(request.assessment_file_id)
-
-        pdf_path = request.pdf_path
-        if not pdf_path and request.pdf_file_id:
-            pdf_path = file_manager.get_file_path(request.pdf_file_id)
-
-        png_path = request.png_path
-        if not png_path and request.png_file_id:
-            png_path = file_manager.get_file_path(request.png_file_id)
-
-        csv_path = request.csv_path
-        if not csv_path and request.csv_file_id:
-            csv_path = file_manager.get_file_path(request.csv_file_id)
+        # Resolve file sources (download from URLs, resolve IDs to paths)
+        resolved_files = await resolve_file_sources(request)
+        assessment_file = resolved_files['assessment_file']
+        pdf_path = resolved_files['pdf_path']
+        png_path = resolved_files['png_path']
+        csv_path = resolved_files['csv_path']
 
         # Determine workflow type (with resolved file paths)
         workflow_type = determine_workflow_type(

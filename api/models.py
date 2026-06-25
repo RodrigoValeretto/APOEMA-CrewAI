@@ -47,6 +47,26 @@ class AnalysisRequest(BaseModel):
         None,
         description="ID of uploaded CSV file (alternative to csv_path)",
     )
+    assessment_file_url: Optional[str] = Field(
+        None,
+        description="URL to assessment JSON file (alternative to assessment_file or assessment_file_id)",
+        examples=["https://example.com/assessment.json"],
+    )
+    pdf_url: Optional[str] = Field(
+        None,
+        description="URL to PDF report file (alternative to pdf_path or pdf_file_id)",
+        examples=["https://example.com/report.pdf"],
+    )
+    png_url: Optional[str] = Field(
+        None,
+        description="URL to PNG plot image (alternative to png_path or png_file_id)",
+        examples=["https://example.com/plot.png"],
+    )
+    csv_url: Optional[str] = Field(
+        None,
+        description="URL to CSV data file (alternative to csv_path or csv_file_id)",
+        examples=["https://example.com/data.csv"],
+    )
     model: str = Field(
         default=ModelType.OLLAMA.value,
         description="LLM model to use",
@@ -63,7 +83,7 @@ class AnalysisRequest(BaseModel):
         }
     }
 
-    @validator("assessment_file", "pdf_path", "png_path", "csv_path", pre=True)
+    @validator("assessment_file", "pdf_path", "png_path", "csv_path", "assessment_file_url", "pdf_url", "png_url", "csv_url", pre=True)
     def empty_str_to_none(cls, v):
         if v == "":
             return None

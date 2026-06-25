@@ -171,15 +171,98 @@ def validate_model_choice(model: str) -> bool:
     return True
 
 
+def validate_mutual_exclusivity(
+    assessment_file: str = None,
+    assessment_file_id: int = None,
+    assessment_file_url: str = None,
+    pdf_path: str = None,
+    pdf_file_id: int = None,
+    pdf_url: str = None,
+    png_path: str = None,
+    png_file_id: int = None,
+    png_url: str = None,
+    csv_path: str = None,
+    csv_file_id: int = None,
+    csv_url: str = None,
+) -> None:
+    """
+    Validate that for each file type, only one source is provided (path, ID, or URL)
+
+    Args:
+        assessment_file: Path to assessment file
+        assessment_file_id: ID of uploaded assessment file
+        assessment_file_url: URL to assessment file
+        pdf_path: Path to PDF file
+        pdf_file_id: ID of uploaded PDF file
+        pdf_url: URL to PDF file
+        png_path: Path to PNG file
+        png_file_id: ID of uploaded PNG file
+        png_url: URL to PNG file
+        csv_path: Path to CSV file
+        csv_file_id: ID of uploaded CSV file
+        csv_url: URL to CSV file
+
+    Raises:
+        InvalidAnalysisInput: If multiple sources are provided for the same file type
+    """
+    # Check assessment file
+    sources_count = sum([
+        bool(assessment_file),
+        bool(assessment_file_id),
+        bool(assessment_file_url)
+    ])
+    if sources_count > 1:
+        raise InvalidAnalysisInput(
+            "Only one source can be provided for assessment_file (path, ID, or URL)"
+        )
+
+    # Check PDF file
+    sources_count = sum([
+        bool(pdf_path),
+        bool(pdf_file_id),
+        bool(pdf_url)
+    ])
+    if sources_count > 1:
+        raise InvalidAnalysisInput(
+            "Only one source can be provided for pdf (path, ID, or URL)"
+        )
+
+    # Check PNG file
+    sources_count = sum([
+        bool(png_path),
+        bool(png_file_id),
+        bool(png_url)
+    ])
+    if sources_count > 1:
+        raise InvalidAnalysisInput(
+            "Only one source can be provided for png (path, ID, or URL)"
+        )
+
+    # Check CSV file
+    sources_count = sum([
+        bool(csv_path),
+        bool(csv_file_id),
+        bool(csv_url)
+    ])
+    if sources_count > 1:
+        raise InvalidAnalysisInput(
+            "Only one source can be provided for csv (path, ID, or URL)"
+        )
+
+
 def validate_analysis_request(
     assessment_file: str = None,
     assessment_file_id: int = None,
+    assessment_file_url: str = None,
     pdf_path: str = None,
     pdf_file_id: int = None,
+    pdf_url: str = None,
     png_path: str = None,
     png_file_id: int = None,
+    png_url: str = None,
     csv_path: str = None,
     csv_file_id: int = None,
+    csv_url: str = None,
     model: str = None,
 ) -> Tuple[bool, str]:
     """
@@ -188,29 +271,62 @@ def validate_analysis_request(
     Args:
         assessment_file: Path to assessment file
         assessment_file_id: ID of uploaded assessment file
+        assessment_file_url: URL to assessment file
         pdf_path: Path to PDF file
         pdf_file_id: ID of uploaded PDF file
+        pdf_url: URL to PDF file
         png_path: Path to PNG file
         png_file_id: ID of uploaded PNG file
+        png_url: URL to PNG file
         csv_path: Path to CSV file
         csv_file_id: ID of uploaded CSV file
+        csv_url: URL to CSV file
         model: LLM model to use
 
     Returns:
         Tuple of (is_valid: bool, error_message: str)
     """
     try:
-        # Validate that assessment file is provided (either path or ID)
-        if not assessment_file and not assessment_file_id:
-            return False, "assessment_file or assessment_file_id must be provided"
+        # Validate mutual exclusivity (only one source per file type)
+        validate_mutual_exclusivity(
+            assessment_file=assessment_file,
+            assessment_file_id=assessment_file_id,
+            assessment_file_url=assessment_file_url,
+            pdf_path=pdf_path,
+            pdf_file_id=pdf_file_id,
+            pdf_url=pdf_url,
+            png_path=png_path,
+            png_file_id=png_file_id,
+            png_url=png_url,
+            csv_path=csv_path,
+            csv_file_id=csv_file_id,
+            csv_url=csv_url,
+        )
 
-        # If assessment_file is provided, validate it
+        # Validate that assessment file is provided (either path, ID, or URL)
+        if not assessment_file and not assessment_file_id and not assessment_file_url:
+            return False, "assessment_file, assessment_file_id, or assessment_file_url must be provided"
+
+        # Validate URLs
+        if assessment_file_url:
+            validate_url(assessment_file_url)
+
+        if pdf_url:
+            validate_url(pdf_url)
+
+        if png_url:
+            validate_url(png_url)
+
+        if csv_url:
+            validate_url(csv_url)
+
+        # If file path is provided (not URL), validate it
         if assessment_file:
             validate_file_path(assessment_file)
             validate_file_extension(assessment_file, FileType.ASSESSMENT)
             validate_file_size(assessment_file)
 
-        # Validate optional files if provided
+        # Validate optional files if provided (not URLs)
         if pdf_path:
             validate_file_path(pdf_path)
             validate_file_extension(pdf_path, FileType.PDF)
