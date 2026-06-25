@@ -286,17 +286,15 @@ def delete_analysis(analysis_id: int) -> None:
 
 
 def create_analysis_file(
-    analysis_id: Optional[int],
     file_type: str,
     file_name: str,
     file_path: str,
     file_size: int,
 ) -> int:
     """
-    Create a file tracking record
+    Create a file tracking record (without analysis association)
 
     Args:
-        analysis_id: Optional analysis ID
         file_type: Type of file (assessment, pdf, png, csv)
         file_name: Original filename
         file_path: Path where file is stored
@@ -313,11 +311,11 @@ def create_analysis_file(
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO analysis_files (analysis_id, file_type, file_name, file_path, file_size, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO analysis_files (file_type, file_name, file_path, file_size, created_at)
+                    VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (analysis_id, file_type, file_name, file_path, file_size, datetime.now()),
+                    (file_type, file_name, file_path, file_size, datetime.now()),
                 )
                 file_id = cur.fetchone()[0]
                 conn.commit()
@@ -344,7 +342,7 @@ def get_analysis_file(file_id: int) -> Dict[str, Any]:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     """
-                    SELECT id, analysis_id, file_type, file_name, file_path, file_size, created_at
+                    SELECT id, file_type, file_name, file_path, file_size, created_at
                     FROM analysis_files
                     WHERE id = %s
                     """,
@@ -375,6 +373,103 @@ def delete_analysis_file(file_id: int) -> None:
                 conn.commit()
     except psycopg.Error as e:
         raise DatabaseError(f"Failed to delete analysis file: {str(e)}")
+
+
+def create_analysis_file_mapping(
+    analysis_id: int,
+    file_id: int,
+    file_type: str,
+) -> int:
+    """
+    Create a mapping between an analysis and a file
+
+    Args:
+        analysis_id: ID of analysis
+        file_id: ID of file
+        file_type: Type of file (assessment, pdf, png, csv)
+
+    Returns:
+        mapping_id
+
+    Raises:
+        DatabaseError: If database operation fails
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO analysis_file_mapping (analysis_id, file_id, file_type, created_at)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (analysis_id, file_id, file_type, datetime.now()),
+                )
+                mapping_id = cur.fetchone()[0]
+                conn.commit()
+                return mapping_id
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to create analysis file mapping: {str(e)}")
+
+
+def get_analysis_files(analysis_id: int) -> List[Dict[str, Any]]:
+    """
+    Get all files associated with an analysis
+
+    Args:
+        analysis_id: ID of analysis
+
+    Returns:
+        List of file records with their mapping information
+
+    Raises:
+        DatabaseError: If database operation fails
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT af.id, af.file_type, af.file_name, af.file_path, af.file_size, af.created_at,
+                           afm.file_type as mapping_file_type, afm.created_at as mapping_created_at
+                    FROM analysis_files af
+                    JOIN analysis_file_mapping afm ON af.id = afm.file_id
+                    WHERE afm.analysis_id = %s
+                    ORDER BY afm.created_at DESC
+                    """,
+                    (analysis_id,),
+                )
+                results = cur.fetchall()
+                return [dict(row) for row in results]
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get analysis files: {str(e)}")
+
+
+def cleanup_orphaned_files() -> int:
+    """
+    Delete files that are not referenced by any analysis
+
+    Returns:
+        Number of files deleted
+
+    Raises:
+        DatabaseError: If database operation fails
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # Find and delete orphaned files
+                cur.execute(
+                    """
+                    DELETE FROM analysis_files
+                    WHERE id NOT IN (SELECT DISTINCT file_id FROM analysis_file_mapping)
+                    """
+                )
+                deleted_count = cur.rowcount
+                conn.commit()
+                return deleted_count
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to cleanup orphaned files: {str(e)}")
 
 
 def count_completed_results(analysis_id: int) -> int:

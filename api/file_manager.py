@@ -94,7 +94,6 @@ async def save_uploaded_file(
 
         # Create database record
         file_id = database.create_analysis_file(
-            analysis_id=analysis_id,
             file_type=file_type.value,
             file_name=upload_file.filename,
             file_path=str(file_path),
@@ -245,7 +244,6 @@ async def download_file_from_url(
 
         # Create database record
         file_id = database.create_analysis_file(
-            analysis_id=analysis_id,
             file_type=file_type.value,
             file_name=url_filename,
             file_path=str(file_path),
