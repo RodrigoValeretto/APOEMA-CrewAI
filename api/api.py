@@ -30,6 +30,8 @@ from .models import (
     AnalysisDetailResponse,
     AnalysisListResponse,
     FileUploadResponse,
+    FileExistsRequest,
+    FileExistsResponse,
     HealthCheckResponse,
     ErrorResponse,
     DeleteResponse,
@@ -49,6 +51,8 @@ from .exceptions import (
     ApoemaException,
     AnalysisNotFound,
     InvalidAnalysisInput,
+    InvalidURL,
+    DatabaseError,
 )
 from .validators import (
     validate_analysis_request,
@@ -139,44 +143,46 @@ async def resolve_file_sources(request: AnalysisRequest) -> dict:
         request: AnalysisRequest with file specifications
 
     Returns:
-        Dictionary with resolved file paths: {
-            'assessment_file': str or None,
-            'pdf_path': str or None,
-            'png_path': str or None,
-            'csv_path': str or None,
-        }
+        Dictionary with:
+            - resolved file paths (assessment_file, pdf_path, png_path, csv_path)
+            - file_ids: list of tuples (file_id, file_type) for downloaded files
     """
     resolved = {
         'assessment_file': request.assessment_file,
         'pdf_path': request.pdf_path,
         'png_path': request.png_path,
         'csv_path': request.csv_path,
+        'file_ids': [],  # List of (file_id, file_type) tuples
     }
 
-    # Download from URLs if provided
+    # Download from URLs if provided and track file IDs
     if request.assessment_file_url:
-        _, resolved['assessment_file'] = await file_manager.download_file_from_url(
+        file_id, resolved['assessment_file'] = await file_manager.download_file_from_url(
             request.assessment_file_url,
             FileType.ASSESSMENT,
         )
+        resolved['file_ids'].append((file_id, FileType.ASSESSMENT.value))
 
     if request.pdf_url:
-        _, resolved['pdf_path'] = await file_manager.download_file_from_url(
+        file_id, resolved['pdf_path'] = await file_manager.download_file_from_url(
             request.pdf_url,
             FileType.PDF,
         )
+        resolved['file_ids'].append((file_id, FileType.PDF.value))
 
     if request.png_url:
-        _, resolved['png_path'] = await file_manager.download_file_from_url(
+        file_id, resolved['png_path'] = await file_manager.download_file_from_url(
             request.png_url,
             FileType.PNG,
         )
+        resolved['file_ids'].append((file_id, FileType.PNG.value))
 
     if request.csv_url:
-        _, resolved['csv_path'] = await file_manager.download_file_from_url(
+        file_id, resolved['csv_path'] = await file_manager.download_file_from_url(
             request.csv_url,
             FileType.CSV,
         )
+        resolved['file_ids'].append((file_id, FileType.CSV.value))
 
     # Resolve file IDs to actual paths (for paths not set by URLs)
     if not resolved['assessment_file'] and request.assessment_file_id:
@@ -243,6 +249,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         pdf_path = resolved_files['pdf_path']
         png_path = resolved_files['png_path']
         csv_path = resolved_files['csv_path']
+        downloaded_file_ids = resolved_files['file_ids']
 
         # Determine workflow type (with resolved file paths)
         workflow_type = determine_workflow_type(
@@ -256,6 +263,30 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             analysis_type=workflow_type,
             status=AnalysisStatus.PENDING.value,
         )
+
+        # Collect all file IDs for mapping (both downloaded and passed as reference)
+        all_file_mappings = list(downloaded_file_ids)  # Downloaded files
+
+        # Add file IDs that were passed as references (not downloaded)
+        if request.assessment_file_id and not any(ftype == FileType.ASSESSMENT.value for _, ftype in downloaded_file_ids):
+            all_file_mappings.append((request.assessment_file_id, FileType.ASSESSMENT.value))
+
+        if request.pdf_file_id and not any(ftype == FileType.PDF.value for _, ftype in downloaded_file_ids):
+            all_file_mappings.append((request.pdf_file_id, FileType.PDF.value))
+
+        if request.png_file_id and not any(ftype == FileType.PNG.value for _, ftype in downloaded_file_ids):
+            all_file_mappings.append((request.png_file_id, FileType.PNG.value))
+
+        if request.csv_file_id and not any(ftype == FileType.CSV.value for _, ftype in downloaded_file_ids):
+            all_file_mappings.append((request.csv_file_id, FileType.CSV.value))
+
+        # Create file mappings for all files (downloaded and referenced)
+        for file_id, file_type in all_file_mappings:
+            database.create_analysis_file_mapping(
+                analysis_id=analysis_id,
+                file_id=file_id,
+                file_type=file_type,
+            )
 
         # Submit Dramatiq task (via queue manager for sequential processing)
         enqueue_analysis_for_sequential_processing.send(
@@ -423,10 +454,7 @@ async def delete_analysis_endpoint(analysis_id: int):
         # Verify analysis exists
         _ = database.get_analysis(analysis_id)
 
-        # Clean up files
-        file_manager.cleanup_analysis_files(analysis_id)
-
-        # Delete analysis (cascade deletes results)
+        # Delete analysis (cascade deletes results and mappings)
         database.delete_analysis(analysis_id)
 
         return DeleteResponse(
@@ -668,7 +696,6 @@ async def download_file_from_url(
         file_id, file_path = await file_manager.download_file_from_url(
             request.url,
             request.file_type,
-            request.analysis_id,
         )
 
         file_record = database.get_analysis_file(file_id)
@@ -681,6 +708,64 @@ async def download_file_from_url(
             created_at=file_record["created_at"],
         )
 
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/files/exists",
+    response_model=FileExistsResponse,
+    tags=["Files"],
+)
+async def check_file_exists(request: FileExistsRequest):
+    """
+    Check if a file from a given URL already exists in the system
+
+    Args:
+        request: FileExistsRequest with URL to check
+
+    Returns:
+        FileExistsResponse with existence status and file details if it exists
+
+    Raises:
+        HTTPException: 400 if URL is invalid, 500 if database error occurs
+    """
+    try:
+        # Validate URL format
+        from .validators import validate_url
+        validate_url(request.url)
+
+        # Check if file exists
+        file_record = file_manager.get_file_by_url(request.url)
+
+        if file_record:
+            return FileExistsResponse(
+                exists=True,
+                file_id=file_record["id"],
+                filename=file_record["file_name"],
+                created_at=file_record["created_at"],
+            )
+        else:
+            return FileExistsResponse(
+                exists=False,
+                file_id=None,
+                filename=None,
+                created_at=None,
+            )
+
+    except InvalidURL as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid URL: {str(e)}",
+        )
+    except DatabaseError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}",
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -2,7 +2,6 @@
 File management utilities for APOEMA API
 """
 import os
-import shutil
 from pathlib import Path
 from typing import Optional, Tuple
 from fastapi import UploadFile
@@ -41,10 +40,38 @@ def calculate_file_hash(file_path: str) -> str:
     return sha256_hash.hexdigest()
 
 
+def get_file_by_url(url: str) -> Optional[dict]:
+    """
+    Check if a file already exists for a given URL (for deduplication)
+
+    Args:
+        url: URL to check
+
+    Returns:
+        File record dict if found, None otherwise
+
+    Raises:
+        DatabaseError: If database query fails
+    """
+    return database.get_analysis_file_by_url(url)
+
+
+def file_exists(url: str) -> bool:
+    """
+    Check if a file with the given URL already exists in the database
+
+    Args:
+        url: URL to check
+
+    Returns:
+        True if file exists, False otherwise
+    """
+    return get_file_by_url(url) is not None
+
+
 async def save_uploaded_file(
     upload_file: UploadFile,
     file_type: FileType,
-    analysis_id: Optional[int] = None,
 ) -> Tuple[int, str]:
     """
     Save an uploaded file to disk and create tracking record
@@ -52,7 +79,6 @@ async def save_uploaded_file(
     Args:
         upload_file: FastAPI UploadFile
         file_type: Type of file being uploaded
-        analysis_id: Optional ID of associated analysis
 
     Returns:
         Tuple of (file_id, file_path)
@@ -89,12 +115,8 @@ async def save_uploaded_file(
         with open(file_path, "wb") as f:
             f.write(file_content)
 
-        # Calculate hash
-        file_hash = calculate_file_hash(str(file_path))
-
-        # Create database record
+        # Create database record (no URL for uploaded files)
         file_id = database.create_analysis_file(
-            analysis_id=analysis_id,
             file_type=file_type.value,
             file_name=upload_file.filename,
             file_path=str(file_path),
@@ -161,15 +183,16 @@ def get_file_path(file_id: int) -> Optional[str]:
 async def download_file_from_url(
     url: str,
     file_type: FileType,
-    analysis_id: Optional[int] = None,
 ) -> Tuple[int, str]:
     """
-    Download a file from a URL and save it to disk
+    Download a file from a URL and save it to disk with deduplication
+
+    If the same URL has already been downloaded, the existing file is reused
+    instead of downloading again.
 
     Args:
         url: URL to download file from
         file_type: Type of file being downloaded
-        analysis_id: Optional ID of associated analysis
 
     Returns:
         Tuple of (file_id, file_path)
@@ -185,6 +208,12 @@ async def download_file_from_url(
 
         # Validate URL
         validate_url(url)
+
+        # Check if file with this URL already exists (deduplication)
+        existing_file = get_file_by_url(url)
+        if existing_file:
+            # Reuse existing file
+            return existing_file["id"], existing_file["file_path"]
 
         # Download file with timeout
         response = requests.get(url, timeout=30, stream=True)
@@ -240,16 +269,13 @@ async def download_file_from_url(
         with open(file_path, "wb") as f:
             f.write(file_content)
 
-        # Calculate hash
-        file_hash = calculate_file_hash(str(file_path))
-
-        # Create database record
+        # Create database record with URL for deduplication
         file_id = database.create_analysis_file(
-            analysis_id=analysis_id,
             file_type=file_type.value,
             file_name=url_filename,
             file_path=str(file_path),
             file_size=file_size,
+            url=url,
         )
 
         return file_id, str(file_path)
@@ -266,36 +292,6 @@ async def download_file_from_url(
         raise URLFetchError(f"Failed to download file from {url}: {str(e)}")
 
 
-def cleanup_analysis_files(analysis_id: int) -> None:
-    """
-    Delete all files associated with an analysis
-
-    Args:
-        analysis_id: ID of analysis
-    """
-    try:
-        with database.get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, file_path FROM analysis_files WHERE analysis_id = %s",
-                    (analysis_id,),
-                )
-                files = cur.fetchall()
-
-                for file_id, file_path in files:
-                    # Delete from disk
-                    if file_path and os.path.exists(file_path):
-                        try:
-                            os.remove(file_path)
-                        except Exception as e:
-                            print(f"Warning: Failed to delete {file_path}: {str(e)}")
-
-                # Delete records (cascade happens automatically)
-
-    except Exception as e:
-        print(f"Warning: Failed to cleanup files for analysis {analysis_id}: {str(e)}")
-
-
 def clear_stale_uploads(max_age_hours: int = 24) -> int:
     """
     Clean up uploaded files older than specified age
@@ -308,8 +304,6 @@ def clear_stale_uploads(max_age_hours: int = 24) -> int:
     """
     import time
     try:
-        from datetime import datetime, timedelta
-
         deleted_count = 0
         cutoff_time = time.time() - (max_age_hours * 3600)
 

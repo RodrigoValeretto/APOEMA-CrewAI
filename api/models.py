@@ -312,6 +312,40 @@ class FileUploadResponse(BaseModel):
     }
 
 
+class FileExistsRequest(BaseModel):
+    """Request model for checking if a file exists"""
+
+    url: str = Field(..., description="URL to check for existing file")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "url": "https://example.com/document.pdf",
+            }
+        }
+    }
+
+
+class FileExistsResponse(BaseModel):
+    """Response model for file existence check"""
+
+    exists: bool = Field(..., description="Whether the file already exists")
+    file_id: Optional[int] = Field(None, description="File ID if it exists")
+    filename: Optional[str] = Field(None, description="Filename if it exists")
+    created_at: Optional[datetime] = Field(None, description="Upload timestamp if it exists")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "exists": True,
+                "file_id": 1,
+                "filename": "report.pdf",
+                "created_at": "2024-06-09T12:00:00Z",
+            }
+        }
+    }
+
+
 class HealthCheckResponse(BaseModel):
     """Health check response"""
 
