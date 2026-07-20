@@ -70,6 +70,15 @@ class Config:
     OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "ollama")
 
+    # RAG (Retrieval-Augmented Generation) Configuration
+    RAG_EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "nomic-embed-text")
+    RAG_EMBEDDING_DIM = int(os.getenv("RAG_EMBEDDING_DIM", 768))
+    RAG_SIMILARITY_THRESHOLD = float(os.getenv("RAG_SIMILARITY_THRESHOLD", 0.3))
+    RAG_MAX_RESULTS = int(os.getenv("RAG_MAX_RESULTS", 5))
+    RAG_CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", 1000))
+    RAG_CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", 200))
+    RAG_INPUT_DIR = os.getenv("RAG_INPUT_DIR", str(PROJECT_ROOT / "input"))
+
     # Task Configuration
     TASK_TIMEOUT_MINUTES = int(os.getenv("TASK_TIMEOUT_MINUTES", 60))
     TASK_TIMEOUT_SECONDS = TASK_TIMEOUT_MINUTES * 60
