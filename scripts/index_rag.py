@@ -227,30 +227,57 @@ def main():
         return
 
     # ─── Action: Index Directory (default) ──────────────────────
-    directory = args.dir or config.RAG_INPUT_DIR
-    if not os.path.exists(directory):
-        print(f"Error: Directory not found: {directory}")
+    # Support multiple directories: input (reference) + uploads (user-submitted)
+    directories_to_index = []
+
+    if args.dir:
+        # User specified a directory
+        directories_to_index = [args.dir]
+    else:
+        # Index both input (reference docs) and uploads (user-submitted docs)
+        input_dir = config.RAG_INPUT_DIR
+        uploads_dir = str(config.UPLOAD_DIR)
+
+        # Only add directories that exist
+        if os.path.exists(input_dir):
+            directories_to_index.append(input_dir)
+        if os.path.exists(uploads_dir) and os.listdir(uploads_dir):
+            directories_to_index.append(uploads_dir)
+
+    if not directories_to_index:
+        print(f"Error: No directories found to index")
         sys.exit(1)
 
     print(f"\n{'='*60}")
     print(f"APOEMA RAG Indexer")
     print(f"{'='*60}")
-    print(f"Directory: {directory}")
+    print(f"Directories: {directories_to_index}")
     print(f"Chunk size: {indexer.chunk_size}")
     print(f"Chunk overlap: {indexer.chunk_overlap}")
     print(f"Embedding model: {rag_manager.embedding_model}")
     print(f"{'='*60}\n")
 
-    # Index directory
+    # Index all directories
     try:
-        doc_ids = indexer.index_directory(
-            directory=directory,
-            recursive=args.recursive,
-        )
+        all_doc_ids = []
+
+        for directory in directories_to_index:
+            if not os.path.exists(directory):
+                logger.warning(f"Skipping directory (not found): {directory}")
+                continue
+
+            logger.info(f"Indexing directory: {directory}")
+            doc_ids = indexer.index_directory(
+                directory=directory,
+                recursive=args.recursive,
+            )
+            all_doc_ids.extend(doc_ids)
+            logger.info(f"Indexed {len(doc_ids)} documents from {directory}")
+
         print(f"\n{'='*60}")
         print(f"Indexing complete!")
-        print(f"Documents indexed: {len(doc_ids)}")
-        print(f"Document IDs: {doc_ids}")
+        print(f"Total documents indexed: {len(all_doc_ids)}")
+        print(f"Document IDs: {all_doc_ids}")
         print(f"{'='*60}")
 
         # Create vector index after bulk indexing

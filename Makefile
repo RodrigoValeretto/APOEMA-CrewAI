@@ -88,11 +88,11 @@ docker-logs-db:
 
 # RAG commands
 rag-index:
-	@echo "Indexing input/ files into RAG database..."
+	@echo "Indexing input/ (reference) and uploads/ (user-submitted) into RAG database..."
 	@uv run python scripts/index_rag.py --create-vector-index
 
 rag-reindex:
-	@echo "Re-indexing all files (force)..."
+	@echo "Re-indexing all files from input/ and uploads/ (force)..."
 	@uv run python scripts/index_rag.py --force --create-vector-index
 
 rag-stats:

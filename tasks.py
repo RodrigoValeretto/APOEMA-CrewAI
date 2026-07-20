@@ -354,3 +354,104 @@ def run_analysis_crew_with_tracking(
             f"Error: {str(e)}\n\n{traceback.format_exc()}",
         )
         raise e
+
+
+@dramatiq.actor(
+    max_retries=3,
+    time_limit=300000,  # 5 minutes timeout for RAG indexing
+    min_backoff=1000,   # 1 second
+    max_backoff=10000,  # 10 seconds
+    priority=5,         # Medium-low priority (lower than analysis, higher than nothing)
+)
+def index_file_for_rag(
+    file_path: str,
+    file_type: str,
+) -> dict:
+    """
+    Async task to index uploaded file into RAG database.
+
+    This task runs asynchronously in the background and does NOT block the API response.
+    It prevents duplicate content from flooding the RAG database by checking:
+    1. File hash (SHA256 of raw bytes) - catches exact duplicates
+    2. Content hash (SHA256 of normalized content) - catches semantic duplicates
+
+    Args:
+        file_path: Path to the file to index
+        file_type: Type of file (assessment, pdf, csv) - PNGs are skipped
+
+    Returns:
+        Dictionary with indexing status
+    """
+    try:
+        logger.info(f"[RAG Indexing] Starting indexing for {file_type}: {file_path}")
+
+        # Import here to avoid circular dependencies and allow lazy loading
+        from rag import RagManager, RagIndexer
+        from config import get_config
+
+        # Skip PNG files (they don't provide searchable content)
+        if file_type.lower() == "png":
+            logger.info(f"[RAG Indexing] Skipping PNG file (no searchable content): {file_path}")
+            return {
+                "file_path": file_path,
+                "file_type": file_type,
+                "status": "skipped",
+                "message": "PNG files are not indexed (image files don't provide searchable content)",
+            }
+
+        # Check if file exists
+        if not os.path.exists(file_path):
+            logger.warning(f"[RAG Indexing] File not found: {file_path}")
+            return {
+                "file_path": file_path,
+                "file_type": file_type,
+                "status": "failed",
+                "message": f"File not found: {file_path}",
+            }
+
+        # Initialize RAG manager and indexer
+        config = get_config()
+        rag_manager = RagManager(config=config)
+        indexer = RagIndexer(rag_manager)
+
+        # Configure chunking from config
+        indexer.chunk_size = config.RAG_CHUNK_SIZE
+        indexer.chunk_overlap = config.RAG_CHUNK_OVERLAP
+
+        # Index based on file type
+        doc_id = None
+        if file_type.lower() == "assessment":
+            doc_id = indexer.index_json(file_path)
+        elif file_type.lower() == "pdf":
+            doc_id = indexer.index_pdf(file_path)
+        elif file_type.lower() == "csv":
+            doc_id = indexer.index_csv(file_path)
+        else:
+            logger.warning(f"[RAG Indexing] Unsupported file type: {file_type}")
+            return {
+                "file_path": file_path,
+                "file_type": file_type,
+                "status": "failed",
+                "message": f"Unsupported file type: {file_type}",
+            }
+
+        logger.info(f"[RAG Indexing] ✓ Successfully indexed {file_type} (doc_id={doc_id}): {file_path}")
+        return {
+            "file_path": file_path,
+            "file_type": file_type,
+            "status": "success",
+            "document_id": doc_id,
+            "message": f"File indexed successfully (doc_id={doc_id})",
+        }
+
+    except Exception as e:
+        logger.error(f"[RAG Indexing] ✗ Failed to index {file_type}: {file_path}")
+        logger.error(f"[RAG Indexing] Error: {str(e)}")
+        logger.error(f"[RAG Indexing] Traceback:\n{traceback.format_exc()}")
+        return {
+            "file_path": file_path,
+            "file_type": file_type,
+            "status": "failed",
+            "message": f"Indexing failed: {str(e)}",
+            "error": traceback.format_exc(),
+        }

@@ -115,6 +115,34 @@ class RagManager:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
+    def compute_content_hash(self, content: str) -> str:
+        """
+        Compute hash of normalized content for semantic deduplication.
+
+        For JSON: parses and re-serializes to normalize formatting
+        For text: uses content as-is after stripping whitespace
+
+        This catches semantic duplicates even if formatting differs.
+
+        Args:
+            content: The content to hash (JSON string or plain text)
+
+        Returns:
+            SHA256 hash of normalized content
+        """
+        normalized = content.strip()
+
+        # Try to parse as JSON and re-serialize for normalization
+        try:
+            import json
+            data = json.loads(content)
+            normalized = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+        except (json.JSONDecodeError, ValueError):
+            # Not JSON, use content as-is
+            pass
+
+        return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+
     def document_exists(self, file_hash: str) -> Optional[int]:
         """
         Check if a document with the given hash already exists.
@@ -133,6 +161,32 @@ class RagManager:
                     return row[0] if row else None
         except psycopg.Error as e:
             logger.error(f"Failed to check document existence: {e}")
+            return None
+
+    def content_hash_exists(self, content_hash: str) -> Optional[int]:
+        """
+        Check if a document with the same semantic content already exists.
+
+        This catches duplicates even if formatting differs (e.g., whitespace, key order).
+        Useful for detecting test uploads or re-submitted documents.
+
+        Args:
+            content_hash: Hash of normalized content
+
+        Returns:
+            Document ID if semantic duplicate exists, None otherwise.
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id FROM rag_documents WHERE metadata->>'content_hash' = %s",
+                        (content_hash,),
+                    )
+                    row = cur.fetchone()
+                    return row[0] if row else None
+        except psycopg.Error as e:
+            logger.error(f"Failed to check content hash: {e}")
             return None
 
     def create_document(

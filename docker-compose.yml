@@ -38,7 +38,7 @@ services:
     networks:
       - apoema_network
 
-  # RAG Indexer — indexes input/ files into pgvector (one-shot, runs on startup)
+  # RAG Indexer — indexes input/ and uploads/ files into pgvector (one-shot, runs on startup)
   rag-indexer:
     build:
       context: .
@@ -63,6 +63,10 @@ services:
     volumes:
       - ./:/app
       - ./input:/app/input
+<<<<<<< HEAD
+=======
+      - ./uploads:/app/uploads
+>>>>>>> eb9f8f4 (Fixing rag indexer implementation)
     working_dir: /app
     networks:
       - apoema_network

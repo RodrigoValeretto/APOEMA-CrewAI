@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # Chunking configuration
 DEFAULT_CHUNK_SIZE = 1000  # characters per chunk
 DEFAULT_CHUNK_OVERLAP = 200  # overlap between chunks
+MAX_TOKENS_PER_CHUNK = 512  # Max tokens for embedding model (nomic-embed-text context window)
 
 
 class RagIndexer:
@@ -32,9 +33,61 @@ class RagIndexer:
         self.rag = rag_manager
         self.chunk_size = DEFAULT_CHUNK_SIZE
         self.chunk_overlap = DEFAULT_CHUNK_OVERLAP
+        self.max_tokens = MAX_TOKENS_PER_CHUNK
         self.force_reindex = False
 
     # ─── Text Chunking ───────────────────────────────────────────────
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Rough token count estimation (4 chars per token for Portuguese/English)."""
+        return len(text) // 4
+
+    def _validate_chunk_tokens(self, text: str) -> bool:
+        """Check if chunk exceeds token limit."""
+        token_count = self._estimate_tokens(text)
+        return token_count <= self.max_tokens
+
+    def _split_oversized_chunk(self, text: str, max_retries: int = 3) -> List[str]:
+        """
+        Split a chunk that exceeds token limit into smaller pieces.
+
+        Uses recursive splitting to ensure all pieces fit within token limit.
+
+        Args:
+            text: The text to split.
+            max_retries: Maximum recursion depth.
+
+        Returns:
+            List of chunks that all fit within token limit.
+        """
+        if self._validate_chunk_tokens(text):
+            return [text.strip()]
+
+        if max_retries <= 0:
+            logger.warning(f"Chunk exceeded token limit even after splitting, keeping as-is")
+            return [text.strip()]
+
+        # Split by common delimiters
+        delimiters = ["\n\n", "\n", ". ", ", "]
+        for delimiter in delimiters:
+            if delimiter in text:
+                parts = text.split(delimiter)
+                result = []
+                for part in parts:
+                    if part.strip():
+                        result.extend(self._split_oversized_chunk(part, max_retries - 1))
+                if len(result) > 1:  # Only return if we actually split
+                    return result
+
+        # Last resort: split by character count at half size
+        half_size = len(text) // 2
+        return self._split_oversized_chunk(
+            text[:half_size],
+            max_retries - 1
+        ) + self._split_oversized_chunk(
+            text[half_size:],
+            max_retries - 1
+        )
 
     def chunk_text(
         self,
@@ -45,8 +98,8 @@ class RagIndexer:
         """
         Split text into overlapping chunks for embedding.
 
-        Uses a simple overlapping character-based chunking strategy.
-        For production, consider paragraph/sentence-aware chunking.
+        Uses character-based chunking with token validation to ensure
+        chunks don't exceed embedding model's context window.
 
         Args:
             text: The text to chunk.
@@ -54,7 +107,7 @@ class RagIndexer:
             chunk_overlap: Overlap between chunks.
 
         Returns:
-            List of text chunks.
+            List of text chunks (guaranteed to fit within token limit).
         """
         if not text or not text.strip():
             return []
@@ -63,7 +116,15 @@ class RagIndexer:
         overlap = chunk_overlap or self.chunk_overlap
 
         if len(text) <= size:
-            return [text.strip()]
+            chunk = text.strip()
+            # Validate and split if too large
+            if not self._validate_chunk_tokens(chunk):
+                logger.warning(
+                    f"Single chunk exceeds token limit ({self._estimate_tokens(chunk)} tokens). "
+                    f"Splitting further..."
+                )
+                return self._split_oversized_chunk(chunk)
+            return [chunk]
 
         chunks = []
         start = 0
@@ -71,14 +132,18 @@ class RagIndexer:
             end = start + size
             chunk = text[start:end].strip()
             if chunk:
-                chunks.append(chunk)
+                # Validate and split if oversized
+                if not self._validate_chunk_tokens(chunk):
+                    logger.debug(
+                        f"Chunk at position {start} exceeds token limit ({self._estimate_tokens(chunk)} tokens). "
+                        f"Splitting further..."
+                    )
+                    chunks.extend(self._split_oversized_chunk(chunk))
+                else:
+                    chunks.append(chunk)
             start += size - overlap
 
         return chunks
-
-    def _estimate_tokens(self, text: str) -> int:
-        """Rough token count estimation (4 chars per token for Portuguese/English)."""
-        return len(text) // 4
 
     # ─── PDF Processing ──────────────────────────────────────────────
 
@@ -149,23 +214,38 @@ class RagIndexer:
         """
         Index a PDF file into the RAG database.
 
+        Deduplication strategy:
+        1. Check file hash (exact byte-for-byte match)
+        2. Check content hash (semantic match, ignoring formatting)
+
         Returns:
             Document ID.
         """
         logger.info(f"Indexing PDF: {pdf_path}")
 
-        # Check for duplicates
+        # Check file-level deduplication
         file_hash = self.rag.compute_file_hash(pdf_path)
         if not self.force_reindex:
             existing_id = self.rag.document_exists(file_hash)
             if existing_id:
-                logger.info(f"PDF already indexed (doc_id={existing_id}), skipping: {pdf_path}")
+                logger.info(f"PDF already indexed by file hash (doc_id={existing_id}), skipping: {pdf_path}")
                 return existing_id
 
         # Extract text
         text = self.extract_text_from_pdf(pdf_path)
         if not text.strip():
             raise ValueError(f"No text extracted from PDF: {pdf_path}")
+
+        # Check content-level deduplication (catches semantic duplicates)
+        content_hash = self.rag.compute_content_hash(text)
+        if not self.force_reindex:
+            existing_id = self.rag.content_hash_exists(content_hash)
+            if existing_id:
+                logger.warning(
+                    f"PDF has duplicate content (doc_id={existing_id}). "
+                    f"Skipping: {pdf_path}. Original source may be in a different directory."
+                )
+                return existing_id
 
         # Extract title from first meaningful line
         lines = [l.strip() for l in text.split("\n") if l.strip()]
@@ -183,6 +263,7 @@ class RagIndexer:
                 "text_length": len(text),
                 "pages_approx": text.count("\f") + 1,
                 "indexed_at": datetime.now().isoformat(),
+                "content_hash": content_hash,  # For semantic deduplication
             },
         )
 
@@ -239,20 +320,37 @@ class RagIndexer:
         """
         Index a JSON file (assessment data) into the RAG database.
 
+        Deduplication strategy:
+        1. Check file hash (exact byte-for-byte match)
+        2. Check content hash (semantic match, ignoring formatting)
+
         Returns:
             Document ID.
         """
         logger.info(f"Indexing JSON: {json_path}")
 
+        with open(json_path, "r", encoding="utf-8") as f:
+            raw_content = f.read()
+            data = json.loads(raw_content)
+
+        # Check file-level deduplication
         file_hash = self.rag.compute_file_hash(json_path)
         if not self.force_reindex:
             existing_id = self.rag.document_exists(file_hash)
             if existing_id:
-                logger.info(f"JSON already indexed (doc_id={existing_id}), skipping: {json_path}")
+                logger.info(f"JSON already indexed by file hash (doc_id={existing_id}), skipping: {json_path}")
                 return existing_id
 
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        # Check content-level deduplication (catches semantic duplicates)
+        content_hash = self.rag.compute_content_hash(raw_content)
+        if not self.force_reindex:
+            existing_id = self.rag.content_hash_exists(content_hash)
+            if existing_id:
+                logger.warning(
+                    f"JSON has duplicate content (doc_id={existing_id}). "
+                    f"Skipping: {json_path}. Original source may be in a different directory."
+                )
+                return existing_id
 
         # Determine title
         title = os.path.basename(json_path)
@@ -269,6 +367,7 @@ class RagIndexer:
                 "file_name": os.path.basename(json_path),
                 "file_size": os.path.getsize(json_path),
                 "indexed_at": datetime.now().isoformat(),
+                "content_hash": content_hash,  # For semantic deduplication
             },
         )
 
@@ -298,10 +397,26 @@ class RagIndexer:
             offset = len(all_chunks)
             for section_name, lines in sections.items():
                 section_text = f"Section: {section_name}\n" + "\n".join(lines)
-                all_chunks.append(
-                    (offset + len(all_chunks), section_text,
-                     {"chunk_type": "section", "section": section_name})
-                )
+
+                # Validate and split oversized sections if necessary
+                if not self._validate_chunk_tokens(section_text):
+                    logger.debug(
+                        f"Section '{section_name}' exceeds token limit ({self._estimate_tokens(section_text)} tokens). "
+                        f"Splitting further..."
+                    )
+                    # Split the oversized section into smaller chunks
+                    sub_chunks = self._split_oversized_chunk(section_text)
+                    for sub_idx, sub_chunk in enumerate(sub_chunks):
+                        all_chunks.append(
+                            (offset + len(all_chunks), sub_chunk,
+                             {"chunk_type": "section", "section": section_name, "part": sub_idx})
+                        )
+                else:
+                    # Section fits within token limit
+                    all_chunks.append(
+                        (offset + len(all_chunks), section_text,
+                         {"chunk_type": "section", "section": section_name})
+                    )
 
         # Embed and insert all chunks
         for idx, chunk_text, chunk_meta in all_chunks:
@@ -456,16 +571,21 @@ class RagIndexer:
         """
         Index a CSV file as descriptive text chunks.
 
+        Deduplication strategy:
+        1. Check file hash (exact byte-for-byte match)
+        2. Check content hash (semantic match, ignoring row order)
+
         Returns:
             Document ID.
         """
         logger.info(f"Indexing CSV: {csv_path}")
 
+        # Check file-level deduplication
         file_hash = self.rag.compute_file_hash(csv_path)
         if not self.force_reindex:
             existing_id = self.rag.document_exists(file_hash)
             if existing_id:
-                logger.info(f"CSV already indexed (doc_id={existing_id}), skipping")
+                logger.info(f"CSV already indexed by file hash (doc_id={existing_id}), skipping")
                 return existing_id
 
         import csv as csv_module
@@ -476,6 +596,19 @@ class RagIndexer:
 
         if not rows:
             raise ValueError(f"Empty CSV file: {csv_path}")
+
+        # Check content-level deduplication (catches semantic duplicates)
+        # Normalize by converting back to JSON format
+        rows_json = json.dumps(rows, ensure_ascii=False, sort_keys=True)
+        content_hash = self.rag.compute_content_hash(rows_json)
+        if not self.force_reindex:
+            existing_id = self.rag.content_hash_exists(content_hash)
+            if existing_id:
+                logger.warning(
+                    f"CSV has duplicate content (doc_id={existing_id}). "
+                    f"Skipping: {csv_path}. Original source may be in a different directory."
+                )
+                return existing_id
 
         # Create a descriptive text representation
         headers = list(rows[0].keys())
@@ -493,6 +626,7 @@ class RagIndexer:
                 "row_count": len(rows),
                 "columns": headers,
                 "indexed_at": datetime.now().isoformat(),
+                "content_hash": content_hash,  # For semantic deduplication
             },
         )
 
