@@ -2,6 +2,7 @@ import os
 from crewai import Agent, Task, Crew, Process, LLM
 from crewai_files import PDFFile, TextFile, ImageFile
 from prompt_loader import load_agent_prompt, load_task_prompt
+from rag import ApoemaRagTool
 
 
 # Initialize LLM configuration
@@ -33,8 +34,26 @@ def get_llm(model: str = "gemini"):
         )
 
 
-def create_agents(llm):
-    """Create and return all agents."""
+def create_agents(llm, enable_rag=True):
+    """Create and return all agents.
+
+    Args:
+        llm: The LLM instance for the agents.
+        enable_rag: Whether to attach the RAG search tool (default: True).
+                   The RAG tool allows agents to search indexed documents
+                   (assessment data, PDF reports, Docling extractions, etc.)
+                   using semantic search via pgvector.
+    """
+    # Initialize RAG tool (lazy - won't fail if DB is not connected)
+    rag_tool = None
+    rag_tools = []
+    if enable_rag:
+        try:
+            rag_tool = ApoemaRagTool()
+            rag_tools = [rag_tool]
+        except Exception as e:
+            print(f"⚠ RAG tool not available (DB may not be ready): {e}")
+
     data_reader_config = load_agent_prompt("data_reader")
     data_reader = Agent(
         role=data_reader_config["Role"],
@@ -43,6 +62,7 @@ def create_agents(llm):
         llm=llm,
         verbose=False,
         multimodal=True,
+        tools=rag_tools,  # RAG: search indexed documents for criteria context
     )
 
     summarizer_config = load_agent_prompt("summarizer")
@@ -52,6 +72,7 @@ def create_agents(llm):
         backstory=summarizer_config["Backstory"],
         llm=llm,
         verbose=False,
+        tools=rag_tools,  # RAG: search indexed documents for summarization context
     )
 
     report_analyzer_config = load_agent_prompt("report_analyzer")
@@ -62,6 +83,7 @@ def create_agents(llm):
         llm=llm,
         verbose=False,
         multimodal=True,
+        tools=rag_tools,  # RAG: search indexed documents for report comparison
     )
 
     utility_assessor_config = load_agent_prompt("utility_assessor")
@@ -71,6 +93,7 @@ def create_agents(llm):
         backstory=utility_assessor_config["Backstory"],
         llm=llm,
         verbose=False,
+        tools=rag_tools,  # RAG: search indexed documents for utility context
     )
 
     plot_data_analyst_config = load_agent_prompt("plot_data_analyst")
@@ -81,6 +104,7 @@ def create_agents(llm):
         llm=llm,
         verbose=False,
         multimodal=True,
+        tools=rag_tools,  # RAG: search indexed documents for data context
     )
 
     plot_insights_generator_config = load_agent_prompt("plot_insights_generator")
@@ -90,6 +114,7 @@ def create_agents(llm):
         backstory=plot_insights_generator_config["Backstory"],
         llm=llm,
         verbose=False,
+        tools=rag_tools,  # RAG: search indexed documents for insights context
     )
 
     return (
