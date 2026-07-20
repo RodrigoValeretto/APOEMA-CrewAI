@@ -63,11 +63,11 @@ serve:
 
 # Docker compose commands
 docker:
-	@echo "Starting Docker environment..."
+	@echo "Starting Docker environment (with auto RAG indexing)..."
 	docker compose up --build
 
 docker-up:
-	@echo "Starting Docker environment (detached)..."
+	@echo "Starting Docker environment (detached, with auto RAG indexing)..."
 	docker compose up -d --build
 
 docker-down:
@@ -85,4 +85,23 @@ docker-logs-worker:
 
 docker-logs-db:
 	@docker compose logs -f apoema-postgres
+
+# RAG commands
+rag-index:
+	@echo "Indexing input/ files into RAG database..."
+	@uv run python scripts/index_rag.py --create-vector-index
+
+rag-reindex:
+	@echo "Re-indexing all files (force)..."
+	@uv run python scripts/index_rag.py --force --create-vector-index
+
+rag-stats:
+	@uv run python scripts/index_rag.py --stats
+
+rag-list:
+	@uv run python scripts/index_rag.py --list
+
+rag-search:
+	@echo "Usage: make rag-search query='your question here'"
+	@uv run python scripts/index_rag.py --search "$(query)"
 

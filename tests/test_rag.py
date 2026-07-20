@@ -227,3 +227,76 @@ def test_create_agents_with_rag():
     assert len(agents) == 6
     # RAG tool may or may not be attached depending on DB availability,
     # but agent creation must never crash.
+
+
+# ─── US-005: pyproject.toml optional RAG dependencies ───────────────
+
+def test_pyproject_toml_is_valid_syntax():
+    """pyproject.toml must be valid TOML syntax."""
+    import tomllib
+    with open("pyproject.toml", "rb") as f:
+        tomllib.load(f)  # raises TOMLDecodeError if invalid
+
+
+def test_pyproject_has_rag_optional_dependencies():
+    """pyproject.toml must have [project.optional-dependencies] with 'rag' key."""
+    import tomllib
+    with open("pyproject.toml", "rb") as f:
+        data = tomllib.load(f)
+
+    opt_deps = data["project"]["optional-dependencies"]
+    assert "rag" in opt_deps, "[project.optional-dependencies] missing 'rag' key"
+    assert isinstance(opt_deps["rag"], list), "'rag' extras must be a list"
+
+
+def test_rag_extras_includes_pymupdf():
+    """'rag' extras must include pymupdf>=1.23.0."""
+    import tomllib
+    with open("pyproject.toml", "rb") as f:
+        data = tomllib.load(f)
+
+    rag_deps = data["project"]["optional-dependencies"]["rag"]
+    pymupdf_deps = [d for d in rag_deps if d.startswith("pymupdf")]
+    assert len(pymupdf_deps) > 0, "pymupdf not found in rag extras"
+    # Verify the version constraint is present
+    assert any("1.23" in d for d in pymupdf_deps), (
+        f"pymupdf must have >=1.23.0 constraint, got: {pymupdf_deps[0]}"
+    )
+
+
+def test_rag_extras_includes_pdfplumber():
+    """'rag' extras must include pdfplumber>=0.10.0."""
+    import tomllib
+    with open("pyproject.toml", "rb") as f:
+        data = tomllib.load(f)
+
+    rag_deps = data["project"]["optional-dependencies"]["rag"]
+    pdfplumber_deps = [d for d in rag_deps if d.startswith("pdfplumber")]
+    assert len(pdfplumber_deps) > 0, "pdfplumber not found in rag extras"
+    # Verify the version constraint is present
+    assert any("0.10" in d for d in pdfplumber_deps), (
+        f"pdfplumber must have >=0.10.0 constraint, got: {pdfplumber_deps[0]}"
+    )
+
+
+def test_rag_extras_are_two_packages():
+    """'rag' extras must contain exactly 2 packages (pymupdf + pdfplumber)."""
+    import tomllib
+    with open("pyproject.toml", "rb") as f:
+        data = tomllib.load(f)
+
+    rag_deps = data["project"]["optional-dependencies"]["rag"]
+    assert len(rag_deps) == 2, f"rag extras should have 2 packages, got {len(rag_deps)}: {rag_deps}"
+
+
+def test_pypdf2_is_not_in_rag_extras():
+    """PyPDF2 must remain a core dependency, not moved to rag extras."""
+    import tomllib
+    with open("pyproject.toml", "rb") as f:
+        data = tomllib.load(f)
+
+    rag_deps = data["project"]["optional-dependencies"]["rag"]
+    for dep in rag_deps:
+        assert not dep.startswith("PyPDF2"), (
+            f"PyPDF2 must remain a core dependency, found in rag extras: {dep}"
+        )
