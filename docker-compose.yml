@@ -63,10 +63,7 @@ services:
     volumes:
       - ./:/app
       - ./input:/app/input
-<<<<<<< HEAD
-=======
       - ./uploads:/app/uploads
->>>>>>> eb9f8f4 (Fixing rag indexer implementation)
     working_dir: /app
     networks:
       - apoema_network
