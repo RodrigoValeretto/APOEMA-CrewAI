@@ -377,7 +377,7 @@ def index_file_for_rag(
 
     Args:
         file_path: Path to the file to index
-        file_type: Type of file (assessment, pdf, csv) - PNGs are skipped
+        file_type: Type of file (assessment, pdf) - PNGs and CSVs are skipped
 
     Returns:
         Dictionary with indexing status
@@ -397,6 +397,16 @@ def index_file_for_rag(
                 "file_type": file_type,
                 "status": "skipped",
                 "message": "PNG files are not indexed (image files don't provide searchable content)",
+            }
+
+        # Skip CSV files (they feed the plot-analysis workflow, not RAG)
+        if file_type.lower() == "csv":
+            logger.info(f"[RAG Indexing] Skipping CSV file (not indexed): {file_path}")
+            return {
+                "file_path": file_path,
+                "file_type": file_type,
+                "status": "skipped",
+                "message": "CSV files are not indexed into the RAG database",
             }
 
         # Check if file exists
@@ -424,8 +434,6 @@ def index_file_for_rag(
             doc_id = indexer.index_json(file_path)
         elif file_type.lower() == "pdf":
             doc_id = indexer.index_pdf(file_path)
-        elif file_type.lower() == "csv":
-            doc_id = indexer.index_csv(file_path)
         else:
             logger.warning(f"[RAG Indexing] Unsupported file type: {file_type}")
             return {

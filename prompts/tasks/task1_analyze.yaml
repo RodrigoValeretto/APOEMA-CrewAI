@@ -8,6 +8,7 @@ description: |
   3. **Métricas de Desempenho:** Extraia quais são os indicadores quantitativos (ex: N de publicações por docente) e qualitativos (ex: impacto social) exigidos.
   4. **Réguas de Nota:** Identifique os critérios que diferenciam um programa "Bom" (Nota 4) de um programa de "Excelência" (Notas 6 e 7).
   5. **Vínculo com o APOEMA:** Identifique quais desses critérios podem ser representados por dados de produção, corpo docente ou discente (que são os dados que o APOEMA agrega).
+  6. **Enriquecimento via RAG:** Consulte a ferramenta **RAG Search** no banco vetorial (PostgreSQL/pgvector) para recuperar informações sobre as fichas de avaliação indexadas. Use buscas semânticas (ex: `query="critérios da ficha de avaliação de <Área>"`, `source_type="json"`) para confirmar pesos, réguas de nota e indicadores, principalmente quando o `{assessment_data}` estiver incompleto ou ambíguo. Incorpore os trechos relevantes retornados ao mapeamento. Se a busca não retornar resultados úteis, prossiga com os dados disponíveis em `{assessment_data}`.
 
   A resposta deve ser rigorosamente em **português-brasileiro** e formatada como um objeto **JSON** puro, sem textos explicativos fora do bloco de código.
 

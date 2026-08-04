@@ -135,12 +135,6 @@ WITH (lists = 100)
 - 50 chunks × (embedding 200ms + insert 5ms) = 10,250ms
 - **Total: ~10-11 seconds**
 
-**Large CSV (1000+ rows):**
-- Parsing: 10-50ms
-- Chunking (10 rows per chunk): ~30-50ms
-- 100 chunks × (embedding 200ms + insert 5ms) = 20,500ms
-- **Total: ~20-21 seconds**
-
 **Key Point:** These times are for background workers, not blocking the API.
 
 #### Database Query Performance During Indexing
@@ -617,8 +611,7 @@ print(stats)
 #   "total_chunks": 2540,
 #   "documents_by_type": [
 #     {"source_type": "pdf", "count": 45},
-#     {"source_type": "json", "count": 60},
-#     {"source_type": "csv", "count": 20}
+#     {"source_type": "json", "count": 60}
 #   ],
 #   "embedding_model": "nomic-embed-text"
 # }

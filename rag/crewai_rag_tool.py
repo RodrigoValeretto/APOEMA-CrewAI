@@ -22,7 +22,7 @@ class RagSearchInput(BaseModel):
     query: str = Field(..., description="The search query to find relevant documents")
     source_type: Optional[str] = Field(
         None,
-        description="Optional filter by source type (e.g., 'pdf', 'json', 'csv', 'docling_json')",
+        description="Optional filter by source type (e.g., 'pdf', 'json', 'docling_json')",
     )
 
 
@@ -32,9 +32,13 @@ class ApoemaRagTool(BaseTool):
     name: str = "RAG Search"
     description: str = (
         "Search the RAG (Retrieval-Augmented Generation) database using semantic search. "
-        "Use this to find relevant information from indexed documents such as assessment "
-        "criteria, PDF reports, Docling extractions, and structured data. "
-        "Provide a natural language query and optionally filter by source type."
+        "The database stores the assessment files (CAPES evaluation forms / fichas de "
+        "avaliação), PDF reports, Docling extractions, and structured data indexed in a "
+        "PostgreSQL/pgvector database. Use this tool to retrieve information about the "
+        "assessment files when you need to confirm criteria, weights, or scoring rules, "
+        "and to enrich your analysis with indexed context. "
+        "Provide a natural language query and optionally filter by source type "
+        "('pdf', 'json', 'docling_json')."
     )
     args_schema: Type[BaseModel] = RagSearchInput
 
@@ -44,7 +48,7 @@ class ApoemaRagTool(BaseTool):
 
         Args:
             query: Natural language search query.
-            source_type: Optional source type filter (pdf, json, csv, docling_json).
+            source_type: Optional source type filter (pdf, json, docling_json).
 
         Returns:
             Formatted search results as a string (suitable for LLM context).

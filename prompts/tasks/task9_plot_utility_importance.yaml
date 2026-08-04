@@ -13,6 +13,7 @@ description: |
   4. **Classificação de Importância:** Classifique o gráfico como Essencial, Importante, Útil, Marginal ou Irrelevante para a área.
   
   5. **Recomendação de Ação:** Formule uma recomendação clara: Manter, Adaptar ou Substituir.
+  6. **Consulta à Base RAG:** Use a ferramenta **RAG Search** para recuperar, do banco vetorial (PostgreSQL/pgvector), os critérios críticos das fichas de avaliação da área (ex: `query="critérios críticos da ficha de avaliação de <Área>"`, `source_type="json"`) e fundamentar a relevância do gráfico para a avaliação CAPES. Se a busca não retornar resultados úteis, prossiga com o contexto de `{assessment_data}`.
 
 expected_output: |
   Um relatório de importância e utilidade em Markdown, focado em texto direto, estruturado da seguinte forma:

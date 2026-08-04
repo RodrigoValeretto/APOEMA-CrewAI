@@ -83,6 +83,7 @@ class ApoemaFlow(Flow):
         print(f"Flow State ID: {self.state['id']}")
         print(f"📋 Workflow type: {self.state['workflow_type']}")
         print(f"📋 Total tasks available: {len(self.state['tasks'])}")
+        print("🔎 RAG Search: attached to assessment-related tasks (task-level scope)")
 
         """Task 1: Run data analysis with the data reader agent."""
         print("\n🔍 Running data analysis...")

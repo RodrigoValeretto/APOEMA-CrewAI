@@ -5,7 +5,6 @@ Supported file types:
 - PDF: Extracts text using PyPDF2/pdfplumber
 - JSON (assessment data): Chunks structured JSON content
 - Docling JSON: Processes IBM Docling extraction output (texts, tables)
-- CSV: Converts tabular data to text descriptions
 - TXT/MD: Plain text chunking
 """
 
@@ -565,105 +564,6 @@ class RagIndexer:
         logger.info(f"Indexed Docling JSON: {json_path} -> doc_id={doc_id} ({len(all_chunks)} chunks)")
         return doc_id
 
-    # ─── CSV Processing ──────────────────────────────────────────────
-
-    def index_csv(self, csv_path: str) -> int:
-        """
-        Index a CSV file as descriptive text chunks.
-
-        Deduplication strategy:
-        1. Check file hash (exact byte-for-byte match)
-        2. Check content hash (semantic match, ignoring row order)
-
-        Returns:
-            Document ID.
-        """
-        logger.info(f"Indexing CSV: {csv_path}")
-
-        # Check file-level deduplication
-        file_hash = self.rag.compute_file_hash(csv_path)
-        if not self.force_reindex:
-            existing_id = self.rag.document_exists(file_hash)
-            if existing_id:
-                logger.info(f"CSV already indexed by file hash (doc_id={existing_id}), skipping")
-                return existing_id
-
-        import csv as csv_module
-
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv_module.DictReader(f)
-            rows = list(reader)
-
-        if not rows:
-            raise ValueError(f"Empty CSV file: {csv_path}")
-
-        # Check content-level deduplication (catches semantic duplicates)
-        # Normalize by converting back to JSON format
-        rows_json = json.dumps(rows, ensure_ascii=False, sort_keys=True)
-        content_hash = self.rag.compute_content_hash(rows_json)
-        if not self.force_reindex:
-            existing_id = self.rag.content_hash_exists(content_hash)
-            if existing_id:
-                logger.warning(
-                    f"CSV has duplicate content (doc_id={existing_id}). "
-                    f"Skipping: {csv_path}. Original source may be in a different directory."
-                )
-                return existing_id
-
-        # Create a descriptive text representation
-        headers = list(rows[0].keys())
-        title = os.path.basename(csv_path)
-
-        # Create document
-        doc_id = self.rag.create_document(
-            source_path=csv_path,
-            source_type="csv",
-            title=title,
-            file_hash=file_hash,
-            metadata={
-                "file_name": os.path.basename(csv_path),
-                "file_size": os.path.getsize(csv_path),
-                "row_count": len(rows),
-                "columns": headers,
-                "indexed_at": datetime.now().isoformat(),
-                "content_hash": content_hash,  # For semantic deduplication
-            },
-        )
-
-        # Build text representation
-        parts = [f"CSV File: {title}"]
-        parts.append(f"Columns: {', '.join(headers)}")
-        parts.append(f"Total rows: {len(rows)}")
-        parts.append("")
-
-        # Add rows in batches (10 rows per chunk)
-        batch_size = 10
-        chunks = []
-        for i in range(0, len(rows), batch_size):
-            batch = rows[i : i + batch_size]
-            batch_text = "\n".join(
-                ", ".join(f"{h}: {row.get(h, '')}" for h in headers)
-                for row in batch
-            )
-            full_text = "\n".join(parts[:3]) + "\n\n" + batch_text
-            chunks.append((i // batch_size, full_text))
-
-        # Embed and insert
-        for idx, chunk_text in chunks:
-            embedding = self.rag.generate_embedding(chunk_text)
-            self.rag.insert_chunk(
-                document_id=doc_id,
-                chunk_index=idx,
-                content=chunk_text,
-                embedding=embedding,
-                metadata={"chunk_type": "csv_data", "batch": idx},
-                token_count=self._estimate_tokens(chunk_text),
-            )
-
-        self.rag.update_document_chunk_count(doc_id, len(chunks))
-        logger.info(f"Indexed CSV: {csv_path} -> doc_id={doc_id} ({len(chunks)} chunks)")
-        return doc_id
-
     # ─── Directory Indexing ──────────────────────────────────────────
 
     def index_directory(
@@ -685,7 +585,7 @@ class RagIndexer:
             List of document IDs created.
         """
         if file_types is None:
-            file_types = [".pdf", ".json", ".csv", ".txt", ".md"]
+            file_types = [".pdf", ".json", ".txt", ".md"]
 
         directory = Path(directory)
         if not directory.exists():
@@ -712,7 +612,6 @@ class RagIndexer:
             and "assessment" not in f.name.lower()
         ]
         pdfs = [f for f in files if f.suffix == ".pdf"]
-        csvs = [f for f in files if f.suffix == ".csv"]
         texts = [f for f in files if f.suffix in [".txt", ".md"]]
 
         doc_ids = []
@@ -756,14 +655,6 @@ class RagIndexer:
                 doc_ids.append(doc_id)
             except Exception as e:
                 logger.error(f"Failed to index JSON {json_file}: {e}")
-
-        # Index CSVs
-        for csv_file in csvs:
-            try:
-                doc_id = self.index_csv(str(csv_file))
-                doc_ids.append(doc_id)
-            except Exception as e:
-                logger.error(f"Failed to index CSV {csv_file}: {e}")
 
         # Index text files
         for text_file in texts:
@@ -848,8 +739,6 @@ class RagIndexer:
                 self.index_json(source_path)
             elif source_type == "docling_json" and os.path.exists(source_path):
                 self.index_docling_json(source_path)
-            elif source_type == "csv" and os.path.exists(source_path):
-                self.index_csv(source_path)
             elif source_type in ("txt", "md") and os.path.exists(source_path):
                 self.index_text(source_path)
             else:

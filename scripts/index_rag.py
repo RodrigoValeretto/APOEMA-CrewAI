@@ -134,8 +134,6 @@ def index_single_file(file_path: str, indexer: RagIndexer) -> bool:
             indexer.index_docling_json(file_path)
         elif ext == ".json":
             indexer.index_json(file_path)
-        elif ext == ".csv":
-            indexer.index_csv(file_path)
         elif ext in (".txt", ".md"):
             indexer.index_text(file_path)
         else:

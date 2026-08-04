@@ -112,7 +112,7 @@ def test_index_single_file_dispatches_by_extension():
         from rag.rag_manager import RagManager
 
         indexer = RagIndexer(RagManager.__new__(RagManager))
-        # .txt should try index_text, .csv index_csv, .pdf index_pdf
+        # .txt should try index_text, .pdf index_pdf
         # These will fail at DB connection level, not routing level
         assert callable(index_single_file)
     finally:
@@ -206,27 +206,58 @@ def test_chunk_text_empty_input():
 
 # ─── Agent integration ─────────────────────────────────────────────
 
-def test_create_agents_without_rag():
-    """Agents must be creatable with RAG disabled (CI/dev without DB)."""
+def test_create_agents_have_no_tools():
+    """Tools are attached at the task level, not the agent level."""
     from apoema_agent import get_llm, create_agents
 
     llm = get_llm(model="gemini")
-    agents = create_agents(llm, enable_rag=False)
+    agents = create_agents(llm)
     assert len(agents) == 6
     names = {a.role for a in agents}
     assert any("Analista" in n for n in names)  # at least one Analista role
     assert any("Estrategista" in n or "Avaliador" in n for n in names)
+    # The RAG tool must NOT live on agents — it is attached per-task in
+    # create_tasks, based on whether the task interprets the assessment files.
+    for agent in agents:
+        assert agent.tools in ([], None), (
+            f"Agent '{agent.role}' must not hold tools directly; "
+            "the RAG tool is scoped per-task in create_tasks"
+        )
 
 
-def test_create_agents_with_rag():
-    """Agents must be creatable with RAG enabled (graceful fallback)."""
-    from apoema_agent import get_llm, create_agents
+def test_create_tasks_attach_rag_only_to_assessment_tasks():
+    """The RAG tool is attached per-task — tasks that interpret the assessment
+    files (1, 2, 5, 6, 8, 9) receive it; artifact-analysis tasks (PDF plot
+    extraction, PNG/CSV analysis) do not."""
+    from apoema_agent import get_llm, create_agents, create_tasks
+    from crewai_files import TextFile, PDFFile, ImageFile
 
     llm = get_llm(model="gemini")
-    agents = create_agents(llm, enable_rag=True)
-    assert len(agents) == 6
-    # RAG tool may or may not be attached depending on DB availability,
-    # but agent creation must never crash.
+    agents = create_agents(llm)
+
+    def has_rag(task):
+        return any(t.name == "RAG Search" for t in (task.tools or []))
+
+    # PDF workflow → tasks 1-6
+    pdf_input_files = {
+        "assessment_data": TextFile(source="input/cc_assessment_data.json"),
+        "report_pdf": PDFFile(source="input/cc_report.pdf"),
+    }
+    tasks = create_tasks("test_output", agents, input_files=pdf_input_files)
+    assert len(tasks) == 6
+    # Tasks 1, 2, 5, 6 interpret the assessment files; 3, 4 analyze the PDF plots
+    assert [has_rag(t) for t in tasks] == [True, True, False, False, True, True]
+
+    # PNG+CSV workflow → tasks 1, 2, 7, 8, 9
+    png_input_files = {
+        "assessment_data": TextFile(source="input/cc_assessment_data.json"),
+        "plot_image": ImageFile(source="input/formacao-docentes.png"),
+        "plot_data": TextFile(source="input/formacao-docentes.csv"),
+    }
+    png_tasks = create_tasks("test_output", agents, input_files=png_input_files)
+    assert len(png_tasks) == 5
+    # Task 7 analyzes the PNG/CSV (no RAG); tasks 8, 9 need CAPES criteria
+    assert [has_rag(t) for t in png_tasks] == [True, True, False, True, True]
 
 
 # ─── US-005: pyproject.toml optional RAG dependencies ───────────────

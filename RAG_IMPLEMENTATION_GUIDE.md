@@ -237,13 +237,12 @@ indexer.chunk_overlap = 200
 # Index different file types
 doc_id = indexer.index_pdf("/path/to/report.pdf")
 doc_id = indexer.index_json("/path/to/assessment.json")
-doc_id = indexer.index_csv("/path/to/data.csv")
 doc_id = indexer.index_text("/path/to/document.txt")
 
 # Index entire directory
 doc_ids = indexer.index_directory(
     directory="/path/to/files",
-    file_types=[".pdf", ".json", ".csv"],
+    file_types=[".pdf", ".json"],
     recursive=True
 )
 
@@ -341,7 +340,7 @@ RAG uses two main tables (created by `schema.sql`):
 CREATE TABLE rag_documents (
     id SERIAL PRIMARY KEY,
     source_path TEXT NOT NULL,          -- Original file path
-    source_type VARCHAR(50) NOT NULL,   -- pdf, json, csv, txt, md
+    source_type VARCHAR(50) NOT NULL,   -- pdf, json, txt, md
     title VARCHAR(500),                 -- Document title
     file_hash VARCHAR(64),              -- SHA256 of raw bytes
     metadata JSONB,                     -- {content_hash, indexed_at, ...}
@@ -477,8 +476,7 @@ make rag-stats
 #   "total_chunks": 2545,
 #   "documents_by_type": [
 #     {"source_type": "json", "count": 61},  # New document counted
-#     {"source_type": "pdf", "count": 45},
-#     {"source_type": "csv", "count": 20}
+#     {"source_type": "pdf", "count": 45}
 #   ]
 # }
 ```
@@ -562,7 +560,7 @@ curl -X POST http://localhost:8000/api/files/assessment \
 
 ### File Upload Endpoints
 
-All upload endpoints follow the same pattern: **save file immediately, return response, index asynchronously**.
+Upload endpoints save the file immediately and return the response. Assessment and PDF uploads trigger RAG indexing asynchronously; CSV and PNG uploads are saved for analysis only (they are **not** indexed into RAG).
 
 #### POST /api/files/assessment
 
@@ -608,10 +606,9 @@ curl -X POST http://localhost:8000/api/files/csv \
 ```
 
 **RAG Behavior:**
-- File indexed via `index_csv()`
-- Rows chunked in batches (10 rows per chunk default)
-- Semantic deduplication
-- Preserves column headers in each chunk
+- File saved but **NOT indexed** (CSV files feed the plot-analysis workflow, not RAG)
+- Returns immediately
+- Available for analysis via file reference
 
 #### POST /api/files/png
 
@@ -856,7 +853,7 @@ input/
 uploads/
 ├── 1_assessment.json       # Auto-indexed on upload
 ├── 2_report.pdf
-├── 3_data.csv
+├── 3_data.csv              # Saved but not indexed
 ├── 4_plot.png              # Saved but not indexed
 └── 5_assessment_copy.json  # Dedup: references doc_id 1
 ```
@@ -873,10 +870,6 @@ indexer.chunk_overlap = 300
 # PDFs: Medium chunks (respects page boundaries)
 indexer.chunk_size = 1000
 indexer.chunk_overlap = 200
-
-# CSVs: Smaller chunks (one batch of rows)
-indexer.chunk_size = 500
-indexer.chunk_overlap = 100
 
 # Plain text: Medium chunks (semantic units)
 indexer.chunk_size = 1000

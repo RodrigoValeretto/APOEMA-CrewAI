@@ -673,11 +673,6 @@ async def upload_csv_file(
 ):
     """
     Upload CSV data file
-
-    Note:
-        RAG indexing happens asynchronously in the background and does NOT block
-        the upload response. The file is immediately available for analysis while
-        indexing runs independently.
     """
     try:
         file_id, file_path = await file_manager.save_uploaded_file(
@@ -687,12 +682,6 @@ async def upload_csv_file(
         )
 
         file_record = database.get_analysis_file(file_id)
-
-        # Trigger asynchronous RAG indexing (non-blocking)
-        index_file_for_rag.send(
-            file_path=file_path,
-            file_type=FileType.CSV.value,
-        )
 
         return FileUploadResponse(
             id=file_record["id"],

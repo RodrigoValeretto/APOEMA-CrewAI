@@ -34,26 +34,13 @@ def get_llm(model: str = "gemini"):
         )
 
 
-def create_agents(llm, enable_rag=True):
+def create_agents(llm):
     """Create and return all agents.
 
-    Args:
-        llm: The LLM instance for the agents.
-        enable_rag: Whether to attach the RAG search tool (default: True).
-                   The RAG tool allows agents to search indexed documents
-                   (assessment data, PDF reports, Docling extractions, etc.)
-                   using semantic search via pgvector.
+    Agents are created without tools — the ApoemaRagTool is attached at the
+    task level in `create_tasks`, so only tasks that interpret the indexed
+    assessment files (PostgreSQL/pgvector) receive the RAG Search tool.
     """
-    # Initialize RAG tool (lazy - won't fail if DB is not connected)
-    rag_tool = None
-    rag_tools = []
-    if enable_rag:
-        try:
-            rag_tool = ApoemaRagTool()
-            rag_tools = [rag_tool]
-        except Exception as e:
-            print(f"⚠ RAG tool not available (DB may not be ready): {e}")
-
     data_reader_config = load_agent_prompt("data_reader")
     data_reader = Agent(
         role=data_reader_config["Role"],
@@ -62,7 +49,6 @@ def create_agents(llm, enable_rag=True):
         llm=llm,
         verbose=False,
         multimodal=True,
-        tools=rag_tools,  # RAG: search indexed documents for criteria context
     )
 
     summarizer_config = load_agent_prompt("summarizer")
@@ -72,7 +58,6 @@ def create_agents(llm, enable_rag=True):
         backstory=summarizer_config["Backstory"],
         llm=llm,
         verbose=False,
-        tools=rag_tools,  # RAG: search indexed documents for summarization context
     )
 
     report_analyzer_config = load_agent_prompt("report_analyzer")
@@ -83,7 +68,6 @@ def create_agents(llm, enable_rag=True):
         llm=llm,
         verbose=False,
         multimodal=True,
-        tools=rag_tools,  # RAG: search indexed documents for report comparison
     )
 
     utility_assessor_config = load_agent_prompt("utility_assessor")
@@ -93,7 +77,6 @@ def create_agents(llm, enable_rag=True):
         backstory=utility_assessor_config["Backstory"],
         llm=llm,
         verbose=False,
-        tools=rag_tools,  # RAG: search indexed documents for utility context
     )
 
     plot_data_analyst_config = load_agent_prompt("plot_data_analyst")
@@ -104,7 +87,6 @@ def create_agents(llm, enable_rag=True):
         llm=llm,
         verbose=False,
         multimodal=True,
-        tools=rag_tools,  # RAG: search indexed documents for data context
     )
 
     plot_insights_generator_config = load_agent_prompt("plot_insights_generator")
@@ -114,7 +96,6 @@ def create_agents(llm, enable_rag=True):
         backstory=plot_insights_generator_config["Backstory"],
         llm=llm,
         verbose=False,
-        tools=rag_tools,  # RAG: search indexed documents for insights context
     )
 
     return (
@@ -128,7 +109,21 @@ def create_agents(llm, enable_rag=True):
 
 
 def create_tasks(output_prefix, agents, input_files):
-    """Create and return all tasks with their required input files."""
+    """Create and return all tasks with their required input files.
+
+    The ApoemaRagTool is attached at the task level. Tasks that interpret the
+    assessment files — extraction, summarization, criteria mapping, utility
+    assessment, plot insights — receive the RAG Search tool so they can query
+    the indexed assessment files (PostgreSQL/pgvector). Tasks that purely
+    analyze a visual artifact (PDF plot extraction, PNG/CSV analysis) do not.
+    """
+    # RAG tool — shared instance, attached only to assessment-related tasks
+    rag_tools = [ApoemaRagTool()]
+    print(
+        "✓ RAG Search tool attached to assessment-related tasks "
+        "(task-level scope)"
+    )
+
     (
         data_reader,
         summarizer,
@@ -145,6 +140,7 @@ def create_tasks(output_prefix, agents, input_files):
         agent=data_reader,
         expected_output=task1_config["expected_output"],
         input_files={"assessment_data": input_files.get("assessment_data")},
+        tools=rag_tools,  # RAG: interprets the assessment file
         verbose=False,
     )
 
@@ -158,6 +154,7 @@ def create_tasks(output_prefix, agents, input_files):
         output_file=f"./output/{output_prefix}_output.md",
         context=[task1],
         input_files={"assessment_data": input_files.get("assessment_data")},
+        tools=rag_tools,  # RAG: summarizes the assessment criteria
         verbose=False,
     )
 
@@ -199,6 +196,7 @@ def create_tasks(output_prefix, agents, input_files):
                 "assessment_data": input_files.get("assessment_data"),
                 "report_pdf": input_files.get("report_pdf"),
             },
+            tools=rag_tools,  # RAG: maps visualizations to CAPES criteria
             verbose=False,
         )
 
@@ -212,6 +210,7 @@ def create_tasks(output_prefix, agents, input_files):
             output_file=f"./output/{output_prefix}_utility_assessment.md",
             context=[task4, task5],
             input_files={"report_pdf": input_files.get("report_pdf")},
+            tools=rag_tools,  # RAG: assesses utility against area criteria
             verbose=False,
         )
 
@@ -246,6 +245,7 @@ def create_tasks(output_prefix, agents, input_files):
                 "plot_image": input_files.get("plot_image"),
                 "plot_data": input_files.get("plot_data"),
             },
+            tools=rag_tools,  # RAG: aligns insights with CAPES criteria
             verbose=False,
         )
 
@@ -263,6 +263,7 @@ def create_tasks(output_prefix, agents, input_files):
                 "plot_image": input_files.get("plot_image"),
                 "plot_data": input_files.get("plot_data"),
             },
+            tools=rag_tools,  # RAG: assesses importance against CAPES criteria
             verbose=False,
         )
 
@@ -272,7 +273,12 @@ def create_tasks(output_prefix, agents, input_files):
 
 
 def run_apoema_pipeline(
-    assessment_file, pdf_path, output_prefix, png_path=None, csv_path=None, model="gemini"
+    assessment_file,
+    pdf_path,
+    output_prefix,
+    png_path=None,
+    csv_path=None,
+    model="gemini",
 ):
     """
     Execute the APOEMA assessment analysis pipeline.
