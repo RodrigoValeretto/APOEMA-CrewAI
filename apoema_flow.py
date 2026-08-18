@@ -5,10 +5,10 @@ from crewai.flow.flow import Flow, listen, start, router, or_
 from crewai_files import PDFFile, TextFile, ImageFile
 from apoema_agent import (
     get_llm,
+    describe_image,
     create_agents,
     create_tasks,
 )
-from rag import ImageDescriptionTool
 from crewai.knowledge.source.json_knowledge_source import JSONKnowledgeSource
 
 
@@ -78,15 +78,15 @@ class ApoemaFlow(Flow):
             input_files["plot_image"] = ImageFile(source=png_path)
             input_files["plot_data"] = TextFile(source=csv_path)
 
-        # Pre-compute the plot image description via the vision model. CrewAI's
-        # ollama native tool-calling does not execute tools, so we call the vision
-        # model directly here and inject the text into task 7a.
+        # Pre-compute the plot image description via a vision backend. For
+        # hosted models (gemini/openai/...) we use Gemini's native vision; for
+        # ollama we fall back to the local vision model (OLLAMA_VISION_MODEL).
         image_description = ""
         if self.state["workflow_type"] == "png_csv":
             plot_image_file = input_files["plot_image"]
             src = plot_image_file.source
             image_path = str(getattr(src, "path", src))
-            image_description = ImageDescriptionTool(image_path=image_path)._run("")
+            image_description = describe_image(image_path, model=model)
 
         # Create tasks once with their required input files
         tasks = create_tasks(

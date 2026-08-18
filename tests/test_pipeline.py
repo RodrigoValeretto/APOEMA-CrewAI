@@ -35,6 +35,27 @@ def test_get_embedder_is_ollama():
     assert embedder["config"]["model_name"] == "nomic-embed-text"
 
 
+def test_get_llm_supports_multiple_providers():
+    """get_llm must route every supported provider without raising.
+
+    Providers whose native SDK is not installed (anthropic/groq need the
+    `crewai[anthropic]` / `crewai[groq]` extras) are ignored; the core
+    providers whose SDKs ship with the base deps must always build.
+    """
+    from apoema_agent import get_llm
+
+    built = []
+    for provider in ("ollama", "gemini", "openai", "anthropic", "deepseek", "groq"):
+        try:
+            llm = get_llm(model=provider)
+            assert llm is not None, f"get_llm({provider}) returned None"
+            built.append(provider)
+        except ImportError:
+            continue  # provider SDK not installed
+
+    assert {"ollama", "gemini", "openai"} <= set(built)
+
+
 # ─── Task wiring ───────────────────────────────────────────────────
 
 

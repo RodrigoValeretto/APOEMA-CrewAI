@@ -8,16 +8,17 @@ from rag import ImageDescriptionTool
 
 # Initialize LLM configuration
 def get_llm(model: str = "gemini"):
-    """
-    Create and return the LLM instance.
-    
-    Args:
-        model: The model to use - 'gemini' or 'ollama' (default: 'gemini')
-               - 'gemini': Google Gemini 3.5 Flash Preview
-               - 'ollama': Ollama with a tool-capable model (OLLAMA_MODEL, default phi4-mini:3.8b)
-    
-    Returns:
-        LLM: Configured LLM instance
+    """Create and return the LLM instance.
+
+    Supported providers (see MODEL_ALTERNATIVES_STUDY.md):
+      - 'ollama': local model (OLLAMA_MODEL, default phi4-mini:3.8b)
+      - 'gemini': Google Gemini Flash (GEMINI_API_KEY) — recommended, has vision
+      - 'openai': OpenAI (OPENAI_API_KEY) — gpt-4o-mini, has vision
+      - 'anthropic': Anthropic Claude Haiku (ANTHROPIC_API_KEY) — has vision
+      - 'deepseek': DeepSeek chat (DEEPSEEK_API_KEY) — cheapest, text-only
+      - 'groq': Groq Llama 3.3 70B (GROQ_API_KEY) — fastest, text-only
+
+    Hosted providers read their API key from the environment.
     """
     if model == "ollama":
         ollama_host = os.getenv(
@@ -29,13 +30,72 @@ def get_llm(model: str = "gemini"):
             base_url=ollama_host,
             temperature=0.4,
         )
-    else:  # Default to gemini
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
+
+    # Hosted providers: (crewai model string, env var for the API key).
+    # Model names reflect the current catalog (Aug/2026) — see MODEL_ALTERNATIVES_STUDY.md.
+    providers = {
+        "gemini": ("gemini/gemini-3-flash-preview", "GEMINI_API_KEY"),
+        "openai": ("openai/gpt-5.6-luna", "OPENAI_API_KEY"),
+        "anthropic": ("anthropic/claude-haiku-4-5", "ANTHROPIC_API_KEY"),
+        "deepseek": ("deepseek/deepseek-v4-flash", "DEEPSEEK_API_KEY"),
+        "groq": ("groq/llama-3.3-70b-versatile", "GROQ_API_KEY"),
+    }
+    if model in providers:
+        model_name, key_env = providers[model]
         return LLM(
-            model="gemini/gemini-3-flash-preview",
-            api_key=gemini_api_key,
+            model=model_name,
+            api_key=os.getenv(key_env),
             temperature=0.4,
         )
+
+    # Unknown provider → default to gemini
+    return LLM(
+        model="gemini/gemini-3-flash-preview",
+        api_key=os.getenv("GEMINI_API_KEY"),
+        temperature=0.4,
+    )
+
+
+# Gemini model used for vision (must match the hosted gemini model string).
+GEMINI_VISION_MODEL = "gemini-3-flash-preview"
+
+
+def describe_image(image_path: str, model: str = "gemini") -> str:
+    """Describe a chart image (task 7a) with a vision-capable backend.
+
+    - 'ollama': local vision model via ImageDescriptionTool (OLLAMA_VISION_MODEL).
+    - any hosted provider: Gemini vision (native image input, no memory limit).
+    """
+    if model == "ollama":
+        from rag import ImageDescriptionTool
+
+        return ImageDescriptionTool(image_path=image_path)._run("")
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return "Error: GEMINI_API_KEY not set"
+
+    try:
+        from google import genai
+        from google.genai import types
+
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=GEMINI_VISION_MODEL,
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+                (
+                    "Descreva detalhadamente este gráfico em português: título, "
+                    "tipo de gráfico, eixos (rótulos e unidades), legenda, valores "
+                    "aproximados e a mensagem principal."
+                ),
+            ],
+        )
+        return response.text or ""
+    except Exception as e:
+        return f"Error: image description failed: {e}"
 
 
 def get_embedder():
