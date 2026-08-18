@@ -212,7 +212,7 @@ def test_create_agents_have_no_tools():
 
     llm = get_llm(model="gemini")
     agents = create_agents(llm)
-    assert len(agents) == 6
+    assert len(agents) == 7
     names = {a.role for a in agents}
     assert any("Analista" in n for n in names)  # at least one Analista role
     assert any("Estrategista" in n or "Avaliador" in n for n in names)
@@ -248,16 +248,19 @@ def test_create_tasks_attach_rag_only_to_assessment_tasks():
     # Tasks 1, 2, 5, 6 interpret the assessment files; 3, 4 analyze the PDF plots
     assert [has_rag(t) for t in tasks] == [True, True, False, False, True, True]
 
-    # PNG+CSV workflow → tasks 1, 2, 7, 8, 9
+    # PNG+CSV workflow → tasks 1, 2, 7a, 7, 8, 9
     png_input_files = {
         "assessment_data": TextFile(source="input/cc_assessment_data.json"),
         "plot_image": ImageFile(source="input/formacao-docentes.png"),
         "plot_data": TextFile(source="input/formacao-docentes.csv"),
     }
     png_tasks = create_tasks("test_output", agents, input_files=png_input_files)
-    assert len(png_tasks) == 5
-    # Task 7 analyzes the PNG/CSV (no RAG); tasks 8, 9 need CAPES criteria
-    assert [has_rag(t) for t in png_tasks] == [True, True, False, True, True]
+    assert len(png_tasks) == 6
+    # Task 7a (image description) receives the pre-computed description text and
+    # therefore has no tool; task 7 analyzes CSV (no RAG); tasks 8, 9 need CAPES
+    # criteria (RAG).
+    assert [has_rag(t) for t in png_tasks] == [True, True, False, False, True, True]
+    assert (png_tasks[2].tools or []) == []  # task 7a has no tools (description injected)
 
 
 # ─── US-005: pyproject.toml optional RAG dependencies ───────────────

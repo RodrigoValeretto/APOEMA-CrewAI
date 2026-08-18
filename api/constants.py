@@ -41,6 +41,7 @@ class TaskName(str, Enum):
     TASK_4_ANALYZE_PLOTS = "task_4_analyze_plots"
     TASK_5_CRITERIA_MAPPING = "task_5_criteria_mapping"
     TASK_6_UTILITY_ASSESSMENT = "task_6_utility_assessment"
+    TASK_7A_DESCRIBE_IMAGE = "task_7a_describe_image"
     TASK_7_PLOT_DATA_ANALYSIS = "task_7_plot_data_analysis"
     TASK_8_PLOT_INSIGHTS = "task_8_plot_insights"
     TASK_9_PLOT_UTILITY_IMPORTANCE = "task_9_plot_utility_importance"
@@ -79,7 +80,7 @@ TASK_TIMEOUT_SECONDS = TASK_TIMEOUT_MINUTES * 60
 # Expected number of tasks per workflow type
 EXPECTED_TASKS = {
     AnalysisType.PDF.value: 6,        # Tasks 1, 2, 3, 4, 5, 6
-    AnalysisType.PNG_CSV.value: 5,    # Tasks 1, 2, 7, 8, 9
+    AnalysisType.PNG_CSV.value: 6,    # Tasks 1, 2, 7a, 7, 8, 9
     AnalysisType.BASIC.value: 2,      # Tasks 1, 2
 }
 

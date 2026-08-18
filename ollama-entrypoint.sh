@@ -12,8 +12,11 @@ pull_model_in_background() {
     fi
 }
 
-# Pull LLM model
-pull_model_in_background "gemma3:4b" &
+# Pull LLM model (tool-calling capable; override via OLLAMA_MODEL env)
+pull_model_in_background "${OLLAMA_MODEL:-phi4-mini:3.8b}" &
+
+# Pull vision model for chart analysis (override via OLLAMA_VISION_MODEL env)
+pull_model_in_background "${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}" &
 
 # Pull embedding model for RAG
 pull_model_in_background "nomic-embed-text" &

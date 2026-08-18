@@ -7,6 +7,7 @@ from apoema_agent import (
     create_agents,
     create_tasks,
 )
+from rag import ImageDescriptionTool
 
 
 class ApoemaFlow(Flow):
@@ -66,11 +67,22 @@ class ApoemaFlow(Flow):
             input_files["plot_image"] = ImageFile(source=png_path)
             input_files["plot_data"] = TextFile(source=csv_path)
 
+        # Pre-compute the plot image description via the vision model. CrewAI's
+        # ollama native tool-calling does not execute tools, so we call the vision
+        # model directly here and inject the text into task 7a.
+        image_description = ""
+        if self.state["workflow_type"] == "png_csv":
+            plot_image_file = input_files["plot_image"]
+            src = plot_image_file.source
+            image_path = str(getattr(src, "path", src))
+            image_description = ImageDescriptionTool(image_path=image_path)._run("")
+
         # Create tasks once with their required input files
         tasks = create_tasks(
             output_prefix,
             agents,
             input_files=input_files,
+            image_description=image_description,
         )
         self.state["tasks"] = tasks
         self.state["llm"] = llm
@@ -163,28 +175,29 @@ class ApoemaFlow(Flow):
 
     @listen("png_csv")
     def png_csv_workflow(self):
-        """Task 7-9: Process PNG+CSV if available."""
+        """Task 7a-9: Process PNG+CSV if available (7a=image description, 7-9=analysis)."""
         print("\n📊 Running PNG+CSV analysis...")
 
         tasks = self.state["tasks"]
 
-        # Map task indices to task names
+        # Map task indices to task names (tasks[2:] = [task7a, task7, task8, task9])
         task_names = {
-            7: "task_7_plot_data_analysis",
-            8: "task_8_plot_insights",
-            9: "task_9_plot_utility_importance",
+            0: "task_7a_describe_image",
+            1: "task_7_plot_data_analysis",
+            2: "task_8_plot_insights",
+            3: "task_9_plot_utility_importance",
         }
 
-        # Execute PNG+CSV-related tasks (7-9)
+        # Execute PNG+CSV-related tasks (7a, 7, 8, 9)
         results = {}
-        for idx, task in enumerate(tasks[2:], start=7):
-            print(f"  ├─ Executing Task {idx}...")
+        for idx, task in enumerate(tasks[2:]):
+            task_name = task_names.get(idx, f"task_{idx}")
+            print(f"  ├─ Executing {task_name}...")
             result = task.execute_sync()
-            results[f"task_{idx}"] = result
+            results[task_name] = result
 
             # Call callback if provided
             if self.on_task_complete:
-                task_name = task_names.get(idx, f"task_{idx}")
                 self.on_task_complete(task_name, str(result))
 
         self.state["png_csv_analysis_results"] = results

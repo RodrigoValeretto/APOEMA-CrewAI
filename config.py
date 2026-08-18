@@ -67,7 +67,17 @@ class Config:
     # LLM Configuration
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    # Ollama base URL. Prefer OLLAMA_BASE_URL, but fall back to OLLAMA_HOST so the
+    # RAG manager and the LLM use the same endpoint (docker-compose sets OLLAMA_HOST).
+    OLLAMA_BASE_URL = os.getenv(
+        "OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    )
+    # Ollama chat model used by the "ollama" profile (must support tool calling).
+    # phi4-mini:3.8b fits comfortably in Docker Desktop's default ~7.65 GiB memory
+    # limit and is strong at structured output (no thinking-mode overhead like qwen3).
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "phi4-mini:3.8b")
+    # Vision model used by the plot analyst (task 7 reads a PNG chart).
+    OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "qwen2.5vl:3b")
     DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "ollama")
 
     # RAG (Retrieval-Augmented Generation) Configuration
