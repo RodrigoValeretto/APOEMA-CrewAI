@@ -5,12 +5,11 @@ description: |
   
   2. **Geração de Insights Acionáveis:** Extraia conclusões que permitam ao coordenador do curso agir. Diferencie pontos de celebração de áreas de risco iminente.
   
-  3. **Alinhamento CAPES:** Relacione os achados com os critérios de avaliação da ficha de avaliação da CAPES para a área específica, utilizando o contexto de `{assessment_data}`.
+  3. **Alinhamento CAPES:** Relacione os achados com os critérios de avaliação da ficha de avaliação da CAPES para a área específica, utilizando os critérios da ficha de avaliação.
   
   4. **Síntese Executiva:** Resuma as descobertas principais de forma clara e concisa, adequada para apresentação a stakeholders.
   
   5. **Próximos Passos:** Sugira ações concretas baseadas nos dados e análises.
-  6. **Consulta à Base RAG:** Consulte a ferramenta **RAG Search** no banco vetorial (PostgreSQL/pgvector) para recuperar os critérios das fichas de avaliação indexadas (ex: `query="critérios de avaliação da ficha de <Área>"`, `source_type="json"`) e fundamentar o item "Alinhamento com CAPES" do relatório. Se a busca não retornar resultados úteis, prossiga com o contexto de `{assessment_data}`.
 
 expected_output: |
   Um relatório em Markdown estruturado da seguinte forma:

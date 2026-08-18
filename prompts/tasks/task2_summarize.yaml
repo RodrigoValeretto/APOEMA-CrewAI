@@ -6,7 +6,6 @@ description: |
   1. **Visão Macro:** O que a área de conhecimento (ex: Computação, Artes, etc.) está priorizando neste quadriênio?
   2. **Gargalos de Nota:** Quais critérios são os maiores "detratores" de nota se não forem atendidos?
   3. **Alvos de Excelência:** O que o programa precisa demonstrar para atingir os níveis 6 e 7 (internacionalização, impacto, etc.)?
-  4. **Consulta à Base RAG:** Use a ferramenta **RAG Search** para recuperar, do banco vetorial (PostgreSQL/pgvector), informações complementares das fichas de avaliação indexadas (ex: `query="gargalos e critérios de maior peso da área <Área>"`, `source_type="json"`). Incorpore os trechos relevantes ao resumo estratégico e cite as fontes quando elas subsidiarem um ponto crítico. Se a busca não retornar resultados úteis, prossiga com os dados disponíveis.
 
   A linguagem deve ser executiva, técnica (usando termos da CAPES/Sucupira) e extremamente organizada em Markdown.
 

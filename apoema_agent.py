@@ -3,7 +3,7 @@ import os
 from crewai import Agent, Task, Crew, Process, LLM
 from crewai_files import PDFFile, TextFile, ImageFile
 from prompt_loader import load_agent_prompt, load_task_prompt
-from rag import ApoemaRagTool, ImageDescriptionTool
+from rag import ImageDescriptionTool
 
 
 # Initialize LLM configuration
@@ -27,34 +27,62 @@ def get_llm(model: str = "gemini"):
         return LLM(
             model=f"ollama/{ollama_model}",
             base_url=ollama_host,
-            temperature=0.7,
+            temperature=0.4,
         )
     else:  # Default to gemini
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         return LLM(
             model="gemini/gemini-3-flash-preview",
             api_key=gemini_api_key,
-            temperature=0.7,
+            temperature=0.4,
         )
 
 
-def create_agents(llm):
+def get_embedder():
+    """Return CrewAI's Ollama embedder config for the native Knowledge feature.
+
+    CrewAI's `Knowledge` system chunks + embeds sources and injects the top
+    relevant chunks into the task prompt automatically — no tool-calling. This
+    is the reliable alternative to the removed pgvector RAG tool, whose native
+    tool-calling does not execute under CrewAI's ollama provider.
+    """
+    ollama_host = os.getenv(
+        "OLLAMA_HOST", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    )
+    return {
+        "provider": "ollama",
+        "config": {
+            "url": f"{ollama_host}/api/embeddings",
+            "model_name": os.getenv("RAG_EMBEDDING_MODEL", "nomic-embed-text"),
+        },
+    }
+
+
+def create_agents(llm, knowledge_sources=None):
     """Create and return all agents.
 
-    Agents are created without tools — the ApoemaRagTool and ImageDescriptionTool
-    are attached at the task level in `create_tasks`, so only tasks that need them
-    receive the respective tools. The ImageDescriptionTool itself calls the vision
-    model (OLLAMA_VISION_MODEL) directly, so no agent needs a separate vision LLM.
+    `knowledge_sources` (CrewAI Knowledge sources, e.g. JSONKnowledgeSource) are
+    attached to the data_reader agent so CrewAI automatically retrieves relevant
+    chunks of the assessment file and injects them into the task prompt — the
+    reliable alternative to tool-calling RAG.
     """
+    embedder = get_embedder()
     data_reader_config = load_agent_prompt("data_reader")
     data_reader = Agent(
         role=data_reader_config["Role"],
         goal=data_reader_config["Goal"],
         backstory=data_reader_config["Backstory"],
         llm=llm,
+        knowledge_sources=knowledge_sources,
+        embedder=embedder,
         verbose=False,
         multimodal=True,
     )
+    # CrewAI only calls set_knowledge() during Crew.kickoff(); our Flow uses
+    # task.execute_sync(), so initialize the knowledge base manually. This chunks
+    # + embeds the assessment and enables auto-injection in execute_task.
+    if knowledge_sources:
+        data_reader.set_knowledge()
 
     summarizer_config = load_agent_prompt("summarizer")
     summarizer = Agent(
@@ -127,28 +155,15 @@ def create_agents(llm):
 def create_tasks(output_prefix, agents, input_files, image_description=""):
     """Create and return all tasks with their required input files.
 
-    The ApoemaRagTool is attached at the task level. Tasks that interpret the
-    assessment files — extraction, summarization, criteria mapping, utility
-    assessment, plot insights — receive the RAG Search tool so they can query
-    the indexed assessment files (PostgreSQL/pgvector). Tasks that purely
-    analyze a visual artifact (PDF plot extraction, PNG/CSV analysis) do not.
-
     `image_description` is the pre-computed visual description of the plot image
     (obtained by the caller via the vision model), injected into task 7a.
-    """
-    # RAG tool — shared instance, attached only to assessment-related tasks
-    rag_tools = [ApoemaRagTool()]
-    print(
-        "✓ RAG Search tool attached to assessment-related tasks "
-        "(task-level scope)"
-    )
 
-    # Read text file contents and interpolate the {assessment_data}/{plot_data}
-    # placeholders in the task prompts. CrewAI's `input_files` attach files as
-    # *multimodal* attachments (which text-only Ollama models ignore), so the
-    # placeholders would otherwise stay literal and the models would never see
-    # the actual data. Truncate to fit the small models' context window.
-    _MAX_TEXT_CHARS = 8000
+    Read text file contents and interpolate the {plot_data} placeholder in the
+    task prompts. CrewAI's `input_files` attach files as *multimodal*
+    attachments (which text-only Ollama models ignore), so the placeholders
+    would otherwise stay literal and the models would never see the actual data.
+    """
+    _MAX_TEXT_CHARS = 3000
 
     def _read_text(file_obj):
         if file_obj is None:
@@ -158,16 +173,12 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         except Exception:
             return ""
 
-    assessment_text = _read_text(input_files.get("assessment_data"))
     plot_data_text = _read_text(input_files.get("plot_data"))
 
     def _interp(desc):
-        # Inject the full content on the FIRST occurrence only; subsequent
-        # references get a short pointer. Replacing every occurrence would
-        # duplicate large data blobs (assessment JSON appears 3x in some
-        # prompts), blowing up the prompt and causing request timeouts.
-        desc = desc.replace("{assessment_data}", assessment_text, 1)
-        desc = desc.replace("{assessment_data}", "(dados da ficha fornecidos acima)")
+        # The assessment data is fed via CrewAI's native Knowledge feature (see
+        # create_agents / ApoemaFlow) which auto-injects relevant chunks into the
+        # prompt as "Additional Information" — no manual injection or tool-calling.
         desc = desc.replace("{plot_data}", plot_data_text, 1)
         desc = desc.replace("{plot_data}", "(dados do CSV fornecidos acima)")
         desc = desc.replace("{plot_image}", "")  # image handled by task 7a
@@ -190,7 +201,6 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         agent=data_reader,
         expected_output=task1_config["expected_output"],
         input_files={"assessment_data": input_files.get("assessment_data")},
-        tools=rag_tools,  # RAG: interprets the assessment file
         verbose=False,
     )
 
@@ -204,7 +214,6 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         output_file=f"./output/{output_prefix}_output.md",
         context=[task1],
         input_files={"assessment_data": input_files.get("assessment_data")},
-        tools=rag_tools,  # RAG: summarizes the assessment criteria
         verbose=False,
     )
 
@@ -246,7 +255,6 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
                 "assessment_data": input_files.get("assessment_data"),
                 "report_pdf": input_files.get("report_pdf"),
             },
-            tools=rag_tools,  # RAG: maps visualizations to CAPES criteria
             verbose=False,
         )
 
@@ -260,7 +268,6 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
             output_file=f"./output/{output_prefix}_utility_assessment.md",
             context=[task4, task5],
             input_files={"report_pdf": input_files.get("report_pdf")},
-            tools=rag_tools,  # RAG: assesses utility against area criteria
             verbose=False,
         )
 
@@ -312,7 +319,6 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
                 "plot_image": input_files.get("plot_image"),
                 "plot_data": input_files.get("plot_data"),
             },
-            tools=rag_tools,  # RAG: aligns insights with CAPES criteria
             verbose=False,
         )
 
@@ -330,7 +336,6 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
                 "plot_image": input_files.get("plot_image"),
                 "plot_data": input_files.get("plot_data"),
             },
-            tools=rag_tools,  # RAG: assesses importance against CAPES criteria
             verbose=False,
         )
 

@@ -4,7 +4,6 @@ description: |
   3. **Auditoria de Cobertura:** Identifique "zonas de sombra" — critérios de alto peso na ficha que não possuem representação visual no relatório analisado.
   4. **Cálculo de Risco:** Baseado na tendência dos dados, determine o nível de risco de uma avaliação negativa (Baixo, Médio, Alto) para cada quesito.
   5. **Redação do Relatório Final:** Traduza toda a inteligência técnica em um relatório puramente textual, organizado por tópicos claros.
-  6. **Consulta à Base RAG:** Consulte a ferramenta **RAG Search** para recuperar, do banco vetorial (PostgreSQL/pgvector), os quesitos, pesos e indicadores das fichas de avaliação indexadas (ex: `query="quesitos e pesos da ficha de avaliação de <Área>"`, `source_type="json"`). Utilize os trechos recuperados para fundamentar o mapeamento de cada gráfico e a identificação de lacunas de evidência. Se a busca não retornar resultados úteis, prossiga com os dados disponíveis em `{assessment_data}`.
 
 expected_output: |
   Um relatório detalhado em Markdown, sem tabelas ou matrizes gráficas, estruturado da seguinte forma:

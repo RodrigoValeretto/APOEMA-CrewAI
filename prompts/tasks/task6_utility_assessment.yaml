@@ -4,7 +4,6 @@ description: |
     2. **Conflito de Domínio:** Aponte se o DNA de "Ciência da Computação" do APOEMA está prejudicando a narrativa da área atual.
     3. **Julgamento de Valor:** Atribua um Score de 1 a 10 para cada gráfico baseado em Relevância, Clareza e Poder de Decisão.
     4. **Plano de Ação:** Consolide recomendações de "Manter", "Adaptar" ou "Substituir" de forma puramente textual.
-    5. **Consulta à Base RAG:** Use a ferramenta **RAG Search** para recuperar, do banco vetorial (PostgreSQL/pgvector), as exigências das fichas de avaliação da área (ex: `query="exigências da ficha de avaliação de <Área>"`, `source_type="json"`) e fundamentar os scores de assertividade, as lacunas e as recomendações. Se a busca não retornar resultados úteis, prossiga com os dados disponíveis.
 
 expected_output: |
   Um relatório de assertividade em Markdown, focado em texto direto, estruturado da seguinte forma:

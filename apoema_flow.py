@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Literal
 from crewai.flow.flow import Flow, listen, start, router, or_
 from crewai_files import PDFFile, TextFile, ImageFile
@@ -8,6 +9,7 @@ from apoema_agent import (
     create_tasks,
 )
 from rag import ImageDescriptionTool
+from crewai.knowledge.source.json_knowledge_source import JSONKnowledgeSource
 
 
 class ApoemaFlow(Flow):
@@ -57,7 +59,16 @@ class ApoemaFlow(Flow):
 
         # Initialize agents for use in setup_inputs
         llm = get_llm(model=model)
-        agents = create_agents(llm)
+        # Feed the assessment file via CrewAI's native Knowledge feature: it
+        # chunks + embeds the file and auto-injects the relevant chunks into the
+        # data_reader's prompt (no tool-calling needed). Note: CrewAI prepends
+        # "knowledge/" to string paths, so pass a Path object for absolute paths.
+        knowledge_sources = None
+        if os.path.exists(assessment_file):
+            knowledge_sources = [
+                JSONKnowledgeSource(file_paths=[Path(assessment_file)])
+            ]
+        agents = create_agents(llm, knowledge_sources=knowledge_sources)
 
         # Prepare input files based on workflow type
         input_files = {"assessment_data": TextFile(source=assessment_file)}
@@ -95,7 +106,6 @@ class ApoemaFlow(Flow):
         print(f"Flow State ID: {self.state['id']}")
         print(f"📋 Workflow type: {self.state['workflow_type']}")
         print(f"📋 Total tasks available: {len(self.state['tasks'])}")
-        print("🔎 RAG Search: attached to assessment-related tasks (task-level scope)")
 
         """Task 1: Run data analysis with the data reader agent."""
         print("\n🔍 Running data analysis...")

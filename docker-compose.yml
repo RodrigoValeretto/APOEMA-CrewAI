@@ -1,7 +1,7 @@
 services:
-  # PostgreSQL com pgvector
+  # PostgreSQL
   postgres:
-    image: pgvector/pgvector:0.8.0-pg16
+    image: postgres:16-alpine
     container_name: apoema-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-apoema}
@@ -35,36 +35,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    networks:
-      - apoema_network
-
-  # RAG Indexer — indexes input/ and uploads/ files into pgvector (one-shot, runs on startup)
-  rag-indexer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: apoema-rag-indexer
-    command: python scripts/index_rag.py --create-vector-index
-    environment:
-      DB_HOST: ${DB_HOST:-postgres}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_USER: ${DB_USER:-apoema}
-      DB_PASSWORD: ${DB_PASSWORD:-apoema_dev_password}
-      DB_NAME: ${DB_NAME:-apoema_db}
-      OLLAMA_BASE_URL: http://ollama:11434
-      PYTHONUNBUFFERED: 1
-    depends_on:
-      postgres:
-        condition: service_healthy
-      ollama:
-        condition: service_started
-      flyway:
-        condition: service_completed_successfully
-    volumes:
-      - ./:/app
-      - ./input:/app/input
-      - ./uploads:/app/uploads
-    working_dir: /app
     networks:
       - apoema_network
 

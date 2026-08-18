@@ -62,7 +62,6 @@ from .validators import (
 from . import database, file_manager
 from tasks import (
     enqueue_analysis_for_sequential_processing,
-    index_file_for_rag,
 )
 
 
@@ -541,11 +540,6 @@ async def upload_assessment_file(
 
     Returns:
         File metadata with ID
-
-    Note:
-        RAG indexing happens asynchronously in the background and does NOT block
-        the upload response. The file is immediately available for analysis while
-        indexing runs independently.
     """
     try:
         file_id, file_path = await file_manager.save_uploaded_file(
@@ -555,13 +549,6 @@ async def upload_assessment_file(
         )
 
         file_record = database.get_analysis_file(file_id)
-
-        # Trigger asynchronous RAG indexing (non-blocking)
-        # File is already saved and available, indexing happens in background
-        index_file_for_rag.send(
-            file_path=file_path,
-            file_type=FileType.ASSESSMENT.value,
-        )
 
         return FileUploadResponse(
             id=file_record["id"],
@@ -590,11 +577,6 @@ async def upload_pdf_file(
 ):
     """
     Upload PDF report file
-
-    Note:
-        RAG indexing happens asynchronously in the background and does NOT block
-        the upload response. The file is immediately available for analysis while
-        indexing runs independently.
     """
     try:
         file_id, file_path = await file_manager.save_uploaded_file(
@@ -604,12 +586,6 @@ async def upload_pdf_file(
         )
 
         file_record = database.get_analysis_file(file_id)
-
-        # Trigger asynchronous RAG indexing (non-blocking)
-        index_file_for_rag.send(
-            file_path=file_path,
-            file_type=FileType.PDF.value,
-        )
 
         return FileUploadResponse(
             id=file_record["id"],

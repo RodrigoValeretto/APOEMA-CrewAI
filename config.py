@@ -68,7 +68,8 @@ class Config:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     # Ollama base URL. Prefer OLLAMA_BASE_URL, but fall back to OLLAMA_HOST so the
-    # RAG manager and the LLM use the same endpoint (docker-compose sets OLLAMA_HOST).
+    # LLM and the Knowledge embedder use the same endpoint (docker-compose sets
+    # OLLAMA_HOST).
     OLLAMA_BASE_URL = os.getenv(
         "OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://localhost:11434")
     )
@@ -80,14 +81,9 @@ class Config:
     OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "qwen2.5vl:3b")
     DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "ollama")
 
-    # RAG (Retrieval-Augmented Generation) Configuration
+    # Embedding model used by CrewAI's native Knowledge feature (feeds the
+    # assessment file into agents via automatic retrieval + injection).
     RAG_EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "nomic-embed-text")
-    RAG_EMBEDDING_DIM = int(os.getenv("RAG_EMBEDDING_DIM", 768))
-    RAG_SIMILARITY_THRESHOLD = float(os.getenv("RAG_SIMILARITY_THRESHOLD", 0.3))
-    RAG_MAX_RESULTS = int(os.getenv("RAG_MAX_RESULTS", 5))
-    RAG_CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", 1000))
-    RAG_CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", 200))
-    RAG_INPUT_DIR = os.getenv("RAG_INPUT_DIR", str(PROJECT_ROOT / "input"))
 
     # Task Configuration
     TASK_TIMEOUT_MINUTES = int(os.getenv("TASK_TIMEOUT_MINUTES", 60))

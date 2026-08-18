@@ -18,7 +18,7 @@ pull_model_in_background "${OLLAMA_MODEL:-phi4-mini:3.8b}" &
 # Pull vision model for chart analysis (override via OLLAMA_VISION_MODEL env)
 pull_model_in_background "${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}" &
 
-# Pull embedding model for RAG
+# Pull embedding model for CrewAI's Knowledge feature
 pull_model_in_background "nomic-embed-text" &
 
 # Start and keep Ollama running in foreground
