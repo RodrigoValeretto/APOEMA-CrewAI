@@ -17,7 +17,7 @@ def test_create_agents_have_no_tools():
 
     llm = get_llm(model="gemini")
     agents = create_agents(llm)
-    assert len(agents) == 7
+    assert len(agents) == 6
     names = {a.role for a in agents}
     assert any("Analista" in n for n in names)
     for agent in agents:
@@ -75,7 +75,7 @@ def test_create_tasks_pdf_workflow():
 
 
 def test_create_tasks_png_csv_workflow():
-    """PNG+CSV workflow yields tasks 1, 2, 7a, 7, 8, 9 with no RAG tool."""
+    """PNG+CSV workflow yields tasks 1, 2, 7, 8, 9 with no RAG tool."""
     from apoema_agent import get_llm, create_agents, create_tasks
     from crewai_files import TextFile, ImageFile
 
@@ -86,7 +86,7 @@ def test_create_tasks_png_csv_workflow():
         "plot_data": TextFile(source="input/formacao-docentes.csv"),
     }
     tasks = create_tasks("test_output", agents, input_files=input_files)
-    assert len(tasks) == 6
+    assert len(tasks) == 5
     assert all((t.tools or []) == [] for t in tasks)
 
 

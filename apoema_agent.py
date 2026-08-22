@@ -4,6 +4,7 @@ from crewai import Agent, Task, Crew, Process, LLM
 from crewai_files import PDFFile, TextFile, ImageFile
 from prompt_loader import load_agent_prompt, load_task_prompt
 from rag import ImageDescriptionTool
+from retry_utils import retry_with_backoff
 
 
 # Initialize LLM configuration
@@ -34,7 +35,10 @@ def get_llm(model: str = "gemini"):
     # Hosted providers: (crewai model string, env var for the API key).
     # Model names reflect the current catalog (Aug/2026) — see MODEL_ALTERNATIVES_STUDY.md.
     providers = {
-        "gemini": ("gemini/gemini-3-flash-preview", "GEMINI_API_KEY"),
+        "gemini": (
+            f"gemini/{os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}",
+            "GEMINI_API_KEY",
+        ),
         "openai": ("openai/gpt-5.6-luna", "OPENAI_API_KEY"),
         "anthropic": ("anthropic/claude-haiku-4-5", "ANTHROPIC_API_KEY"),
         "deepseek": ("deepseek/deepseek-v4-flash", "DEEPSEEK_API_KEY"),
@@ -50,52 +54,22 @@ def get_llm(model: str = "gemini"):
 
     # Unknown provider → default to gemini
     return LLM(
-        model="gemini/gemini-3-flash-preview",
+        model=f"gemini/{os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}",
         api_key=os.getenv("GEMINI_API_KEY"),
         temperature=0.4,
     )
 
 
-# Gemini model used for vision (must match the hosted gemini model string).
-GEMINI_VISION_MODEL = "gemini-3-flash-preview"
+def describe_image(image_path: str) -> str:
+    """Describe a chart image with the local vision model (Ollama fallback).
 
-
-def describe_image(image_path: str, model: str = "gemini") -> str:
-    """Describe a chart image (task 7a) with a vision-capable backend.
-
-    - 'ollama': local vision model via ImageDescriptionTool (OLLAMA_VISION_MODEL).
-    - any hosted provider: Gemini vision (native image input, no memory limit).
+    Hosted models see the image natively via task input_files (multimodal), so
+    this pre-computed description is only used when running with 'ollama',
+    whose CrewAI provider does not accept image files.
     """
-    if model == "ollama":
-        from rag import ImageDescriptionTool
+    from rag import ImageDescriptionTool
 
-        return ImageDescriptionTool(image_path=image_path)._run("")
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return "Error: GEMINI_API_KEY not set"
-
-    try:
-        from google import genai
-        from google.genai import types
-
-        with open(image_path, "rb") as f:
-            image_bytes = f.read()
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=GEMINI_VISION_MODEL,
-            contents=[
-                types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
-                (
-                    "Descreva detalhadamente este gráfico em português: título, "
-                    "tipo de gráfico, eixos (rótulos e unidades), legenda, valores "
-                    "aproximados e a mensagem principal."
-                ),
-            ],
-        )
-        return response.text or ""
-    except Exception as e:
-        return f"Error: image description failed: {e}"
+    return ImageDescriptionTool(image_path=image_path)._run("")
 
 
 def get_embedder():
@@ -190,17 +164,6 @@ def create_agents(llm, knowledge_sources=None):
         verbose=False,
     )
 
-    # Image descriptor: orchestrates the ImageDescriptionTool (which itself calls
-    # the vision model). Uses the text model so tool-calling is fast and native.
-    image_descriptor_config = load_agent_prompt("image_descriptor")
-    image_descriptor = Agent(
-        role=image_descriptor_config["Role"],
-        goal=image_descriptor_config["Goal"],
-        backstory=image_descriptor_config["Backstory"],
-        llm=llm,
-        verbose=False,
-    )
-
     return (
         data_reader,
         summarizer,
@@ -208,15 +171,15 @@ def create_agents(llm, knowledge_sources=None):
         utility_assessor,
         plot_data_analyst,
         plot_insights_generator,
-        image_descriptor,
     )
 
 
 def create_tasks(output_prefix, agents, input_files, image_description=""):
     """Create and return all tasks with their required input files.
 
-    `image_description` is the pre-computed visual description of the plot image
-    (obtained by the caller via the vision model), injected into task 7a.
+    `image_description` is a pre-computed visual description of the plot image,
+    used only as the Ollama fallback (injected into task 7's prompt); hosted
+    models receive the image natively via `input_files`.
 
     Read text file contents and interpolate the {plot_data} placeholder in the
     task prompts. CrewAI's `input_files` attach files as *multimodal*
@@ -241,7 +204,7 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         # prompt as "Additional Information" — no manual injection or tool-calling.
         desc = desc.replace("{plot_data}", plot_data_text, 1)
         desc = desc.replace("{plot_data}", "(dados do CSV fornecidos acima)")
-        desc = desc.replace("{plot_image}", "")  # image handled by task 7a
+        desc = desc.replace("{plot_image}", "")  # image attached via input_files
         return desc
 
     (
@@ -251,7 +214,6 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         utility_assessor,
         plot_data_analyst,
         plot_insights_generator,
-        image_descriptor,
     ) = agents
 
     # Task 1: Data Analysis
@@ -334,34 +296,39 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         tasks.extend([task3, task4, task5, task6])
 
     # Optional Tasks 7-9: PNG + CSV Plot Analysis (if plot files are available)
-    elif input_files.get("plot_image") and input_files.get("plot_data"):
-        # Task 7a: Describe the PNG chart. CrewAI's ollama native tool-calling does
-        # not reliably execute tools (the model emits the tool call but CrewAI does
-        # not run it), so the visual description is pre-computed by the caller and
-        # injected here. Task 7a then organizes that description into the
-        # structured output the downstream tasks consume.
-        task7a_config = load_task_prompt("task7a_describe_image")
-        task7a = Task(
-            description=(
-                f"{task7a_config['description']}\n\n"
-                f"DESCRIÇÃO VISUAL DA IMAGEM (já obtida pela ferramenta de visão):\n"
-                f"{image_description}"
-            ),
-            agent=image_descriptor,
-            expected_output=task7a_config["expected_output"],
-            verbose=False,
-        )
-
-        # Task 7: Analyze PNG image and CSV data (receives vision output via context)
+    elif input_files.get("plot_data") and (
+        input_files.get("plot_image") or image_description
+    ):
+        # Task 7: Analyze the attached PNG chart + CSV data. Hosted models
+        # (gemini) receive the image natively via input_files (multimodal);
+        # for 'ollama' the caller pre-computes a vision description
+        # (image_description) injected as text, since CrewAI's OpenAI-compatible
+        # provider does not send image files.
         task7_config = load_task_prompt("task7_plot_data_analysis")
+        task7_desc = _interp(task7_config["description"])
+        if image_description:
+            task7_desc += (
+                "\n\nOBSERVAÇÃO: a imagem não está anexada (modelo local sem "
+                "suporte multimodal). Use esta descrição visual obtida pela "
+                "ferramenta de visão para a interpretação visual:\n"
+                f"{image_description}"
+            )
+        task7_input_files: dict = {}
+        if not image_description:
+            # Hosted (multimodal) models: attach the CSV + PNG natively.
+            # For the ollama fallback (image_description set), attaching ANY
+            # input_file triggers CrewAI's supports_multimodal() gate (phi4-mini
+            # is text-only) — the CSV already reaches the model via the
+            # {plot_data} interpolation in the prompt instead.
+            task7_input_files["plot_data"] = input_files.get("plot_data")
+            if input_files.get("plot_image"):
+                task7_input_files["plot_image"] = input_files["plot_image"]
         task7 = Task(
-            description=_interp(task7_config["description"]),
+            description=task7_desc,
             agent=plot_data_analyst,
             expected_output=task7_config["expected_output"],
-            context=[task7a],
-            input_files={
-                "plot_data": input_files.get("plot_data"),
-            },
+            name="task_7_plot_data_analysis",
+            input_files=task7_input_files,
             verbose=False,
         )
 
@@ -373,12 +340,8 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
             expected_output=task8_config["expected_output"],
             markdown=True,
             output_file=f"./output/{output_prefix}_plot_insights.md",
-            context=[task1, task2, task7a, task7],
-            input_files={
-                "assessment_data": input_files.get("assessment_data"),
-                "plot_image": input_files.get("plot_image"),
-                "plot_data": input_files.get("plot_data"),
-            },
+            context=[task1, task2, task7],
+            name="task_8_plot_insights",
             verbose=False,
         )
 
@@ -390,16 +353,12 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
             expected_output=task9_config["expected_output"],
             markdown=True,
             output_file=f"./output/{output_prefix}_plot_importance.md",
-            context=[task1, task2, task7a, task7, task8],
-            input_files={
-                "assessment_data": input_files.get("assessment_data"),
-                "plot_image": input_files.get("plot_image"),
-                "plot_data": input_files.get("plot_data"),
-            },
+            context=[task1, task2, task7, task8],
+            name="task_9_plot_utility_importance",
             verbose=False,
         )
 
-        tasks.extend([task7a, task7, task8, task9])
+        tasks.extend([task7, task8, task9])
 
     return tasks
 
@@ -443,16 +402,27 @@ def run_apoema_pipeline(
     ) = agents
     crew_agents = [data_reader, summarizer]
 
+    image_description = ""
     if pdf_path:
         crew_agents.extend([report_analyzer, utility_assessor])
         input_files["report_pdf"] = PDFFile(source=pdf_path)
     elif png_path and csv_path:
         crew_agents.extend([plot_data_analyst, plot_insights_generator, utility_assessor])
-        input_files["plot_image"] = ImageFile(source=png_path)
         input_files["plot_data"] = TextFile(source=csv_path)
+        if model == "ollama":
+            # OpenAI-compatible provider can't send images; pre-compute a vision
+            # description and inject it into task 7's prompt instead.
+            image_description = describe_image(png_path)
+        else:
+            input_files["plot_image"] = ImageFile(source=png_path)
 
     # Create tasks with their required input files
-    tasks = create_tasks(output_prefix, agents, input_files=input_files)
+    tasks = create_tasks(
+        output_prefix,
+        agents,
+        input_files=input_files,
+        image_description=image_description,
+    )
 
     crew = Crew(
         agents=crew_agents,
@@ -460,5 +430,8 @@ def run_apoema_pipeline(
         process=Process.sequential,
     )
 
-    result = crew.kickoff()
+    result = retry_with_backoff(
+        crew.kickoff,
+        label="crew kickoff",
+    )
     return result

@@ -1,5 +1,5 @@
 description: |
-  Baseado na imagem PNG {plot_image} de um gráfico/visualização e no arquivo CSV {plot_data} correspondente com os dados subjacentes. Sua tarefa é realizar uma análise técnica e estruturada, combinando interpretação visual com análise estatística dos dados.
+  Baseado na imagem PNG de um gráfico/visualização (anexada a esta tarefa) e no arquivo CSV {plot_data} correspondente com os dados subjacentes. Sua tarefa é realizar uma análise técnica e estruturada, combinando interpretação visual com análise estatística dos dados.
 
   1. **Interpretação Visual:** Analise a imagem PNG para entender o tipo de gráfico, layout, cores, escalas, eixos e mensagem visual principal que o gráfico comunica.
   

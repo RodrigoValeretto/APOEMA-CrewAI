@@ -15,6 +15,7 @@ from api.database import (
     create_analysis_file as db_create_analysis_file,
     get_analysis_file as db_get_analysis_file,
     delete_analysis_file as db_delete_analysis_file,
+    get_analysis_files as db_get_analysis_files,
     count_completed_results as db_count_completed_results,
     count_processing_analyses as db_count_processing_analyses,
     count_older_pending_analyses as db_count_older_pending_analyses,
@@ -30,6 +31,7 @@ class DatabaseManager:
         self,
         analysis_type: str,
         status: str = AnalysisStatus.PENDING.value,
+        model: Optional[str] = None,
     ) -> int:
         """
         Create a new analysis
@@ -37,11 +39,12 @@ class DatabaseManager:
         Args:
             analysis_type: Type of analysis (pdf, png_csv, basic)
             status: Initial status
+            model: LLM model used for the analysis (stored for retry support)
 
         Returns:
             analysis_id
         """
-        return db_create_analysis(analysis_type, status)
+        return db_create_analysis(analysis_type, status, model)
 
     def get_analysis(self, analysis_id: int) -> Dict[str, Any]:
         """Get analysis by ID"""
@@ -159,6 +162,11 @@ def get_analysis_results(
 ) -> List[Dict[str, Any]]:
     """Get all results for an analysis"""
     return get_db_manager().get_results(analysis_id, task_name)
+
+
+def get_analysis_files(analysis_id: int) -> List[Dict[str, Any]]:
+    """Get all file records (with paths) mapped to an analysis"""
+    return db_get_analysis_files(analysis_id)
 
 
 def delete_analysis(analysis_id: int) -> None:

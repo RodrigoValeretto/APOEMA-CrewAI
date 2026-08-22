@@ -45,7 +45,8 @@ run:
 		$(if $(png-file),--png-file $(png-file)) \
 		$(if $(csv-file),--csv-file $(csv-file)) \
 		$(if $(model),--model $(model)) \
-		$(if $(prefix),--prefix $(prefix))
+		$(if $(prefix),--prefix $(prefix)) \
+		$(if $(fresh),--fresh)
 
 # Clean generated files
 clean:

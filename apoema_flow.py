@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
 from typing import Literal
+from crewai import Crew, Process
 from crewai.flow.flow import Flow, listen, start, router, or_
 from crewai_files import PDFFile, TextFile, ImageFile
+from crewai.tasks.task_output import TaskOutput
 from apoema_agent import (
     get_llm,
     describe_image,
@@ -10,6 +12,25 @@ from apoema_agent import (
     create_tasks,
 )
 from crewai.knowledge.source.json_knowledge_source import JSONKnowledgeSource
+from retry_utils import (
+    retry_with_backoff,
+    load_checkpoint,
+    save_task_checkpoint,
+    completed_tasks,
+    get_task_output,
+    checkpoint_matches_inputs,
+)
+
+
+def _restore_task_output(task, key: str, raw: str) -> TaskOutput:
+    """Reconstruct a TaskOutput from a checkpoint so context chains resolve."""
+    return TaskOutput(
+        description=task.description,
+        expected_output=task.expected_output,
+        name=key,
+        raw=raw,
+        agent=task.agent.role,
+    )
 
 
 class ApoemaFlow(Flow):
@@ -34,6 +55,7 @@ class ApoemaFlow(Flow):
         model="gemini",
         analysis_id=None,
         on_task_complete=None,
+        fresh=False,
     ):
         super().__init__()
 
@@ -45,6 +67,7 @@ class ApoemaFlow(Flow):
         self.state["output_prefix"] = output_prefix
         self.state["model"] = model
         self.state["analysis_id"] = analysis_id
+        self.state["fresh"] = fresh
 
         # Store callback function
         self.on_task_complete = on_task_complete
@@ -72,21 +95,19 @@ class ApoemaFlow(Flow):
 
         # Prepare input files based on workflow type
         input_files = {"assessment_data": TextFile(source=assessment_file)}
+        image_description = ""
         if self.state["workflow_type"] == "pdf":
             input_files["report_pdf"] = PDFFile(source=pdf_path)
         elif self.state["workflow_type"] == "png_csv":
-            input_files["plot_image"] = ImageFile(source=png_path)
             input_files["plot_data"] = TextFile(source=csv_path)
-
-        # Pre-compute the plot image description via a vision backend. For
-        # hosted models (gemini/openai/...) we use Gemini's native vision; for
-        # ollama we fall back to the local vision model (OLLAMA_VISION_MODEL).
-        image_description = ""
-        if self.state["workflow_type"] == "png_csv":
-            plot_image_file = input_files["plot_image"]
-            src = plot_image_file.source
-            image_path = str(getattr(src, "path", src))
-            image_description = describe_image(image_path, model=model)
+            if model == "ollama":
+                # OpenAI-compatible provider can't send image files; pre-compute
+                # a vision description (OLLAMA_VISION_MODEL) injected into task 7.
+                image_description = describe_image(png_path)
+            else:
+                # Hosted (gemini): attach the chart natively — task 7 receives it
+                # as multimodal content via input_files.
+                input_files["plot_image"] = ImageFile(source=png_path)
 
         # Create tasks once with their required input files
         tasks = create_tasks(
@@ -98,6 +119,17 @@ class ApoemaFlow(Flow):
         self.state["tasks"] = tasks
         self.state["llm"] = llm
         self.state["agents"] = agents
+
+        # Resume support: a checkpoint for this prefix (same inputs) means a
+        # previous run crashed mid-pipeline; completed tasks are restored from
+        # it instead of being re-executed (and re-billed).
+        checkpoint = {} if fresh else load_checkpoint(output_prefix)
+        if checkpoint and not checkpoint_matches_inputs(
+            checkpoint, assessment_file, png_path, csv_path
+        ):
+            print("ℹ️  Input files changed since the last run — ignoring checkpoint.")
+            checkpoint = {}
+        self.state["checkpoint"] = checkpoint
 
     @start()
     def run_data_analysis(self):
@@ -113,7 +145,27 @@ class ApoemaFlow(Flow):
         tasks = self.state["tasks"]
         task1 = tasks[0]
 
-        result = task1.execute_sync()
+        if "task_1_data_analysis" in completed_tasks(self.state["checkpoint"]):
+            print("↩️  Resuming: task 1 already completed — restoring from checkpoint")
+            task1.output = _restore_task_output(
+                task1,
+                "task_1_data_analysis",
+                get_task_output(self.state["checkpoint"], "task_1_data_analysis"),
+            )
+            result = task1.output
+        else:
+            result = retry_with_backoff(
+                task1.execute_sync,
+                label="task_1_data_analysis",
+            )
+            save_task_checkpoint(
+                self.state["output_prefix"],
+                "task_1_data_analysis",
+                result.raw,
+                self.state["assessment_file"],
+                self.state["png_path"],
+                self.state["csv_path"],
+            )
         self.state["data_analysis_result"] = result
         print(f"✓ Data analysis completed")
 
@@ -134,7 +186,27 @@ class ApoemaFlow(Flow):
 
         task2.context = [task1]
 
-        result = task2.execute_sync()
+        if "task_2_summarization" in completed_tasks(self.state["checkpoint"]):
+            print("↩️  Resuming: task 2 already completed — restoring from checkpoint")
+            task2.output = _restore_task_output(
+                task2,
+                "task_2_summarization",
+                get_task_output(self.state["checkpoint"], "task_2_summarization"),
+            )
+            result = task2.output
+        else:
+            result = retry_with_backoff(
+                task2.execute_sync,
+                label="task_2_summarization",
+            )
+            save_task_checkpoint(
+                self.state["output_prefix"],
+                "task_2_summarization",
+                result.raw,
+                self.state["assessment_file"],
+                self.state["png_path"],
+                self.state["csv_path"],
+            )
         self.state["summarization_result"] = result
         print(f"✓ Summarization completed")
 
@@ -170,7 +242,10 @@ class ApoemaFlow(Flow):
         results = {}
         for idx, task in enumerate(tasks[2:], start=3):
             print(f"  ├─ Executing Task {idx}...")
-            result = task.execute_sync()
+            result = retry_with_backoff(
+                task.execute_sync,
+                label=f"task_{idx}",
+            )
             results[f"task_{idx}"] = result
 
             # Call callback if provided
@@ -185,30 +260,71 @@ class ApoemaFlow(Flow):
 
     @listen("png_csv")
     def png_csv_workflow(self):
-        """Task 7a-9: Process PNG+CSV if available (7a=image description, 7-9=analysis)."""
+        """Tasks 7-9: analyze the PNG+CSV plot via a mini-Crew (native multimodal).
+
+        Tasks 1/2 already ran in the Flow; task8/9 read them through their
+        context lists (task.output is populated), while the crew executes 7-9.
+        """
         print("\n📊 Running PNG+CSV analysis...")
 
-        tasks = self.state["tasks"]
+        task7, task8, task9 = self.state["tasks"][2:5]
+        ckpt = self.state["checkpoint"]
 
-        # Map task indices to task names (tasks[2:] = [task7a, task7, task8, task9])
-        task_names = {
-            0: "task_7a_describe_image",
-            1: "task_7_plot_data_analysis",
-            2: "task_8_plot_insights",
-            3: "task_9_plot_utility_importance",
+        # Canonical task keys (must match the API's task-name constants)
+        task_keys = {
+            task7: "task_7_plot_data_analysis",
+            task8: "task_8_plot_insights",
+            task9: "task_9_plot_utility_importance",
         }
 
-        # Execute PNG+CSV-related tasks (7a, 7, 8, 9)
-        results = {}
-        for idx, task in enumerate(tasks[2:]):
-            task_name = task_names.get(idx, f"task_{idx}")
-            print(f"  ├─ Executing {task_name}...")
-            result = task.execute_sync()
-            results[task_name] = result
+        # Restore outputs of tasks that already completed in a previous run so
+        # context chains still resolve for the tasks that remain to be done.
+        done = completed_tasks(ckpt)
+        for task, key in task_keys.items():
+            if key in done:
+                task.output = _restore_task_output(task, key, get_task_output(ckpt, key))
+                print(f"↩️  Resuming: {key} already completed — restoring from checkpoint")
 
-            # Call callback if provided
+        # Only the tasks that never completed run now (retried with backoff at
+        # the crew level via retry_with_backoff below).
+        pending = [t for t in task_keys if task_keys[t] not in done]
+
+        # The plot tasks run as a Crew so input_files reach the model natively
+        # (multimodal). task_callback preserves per-task progress reporting and
+        # checkpoints each completed task so a crash here resumes at the next one.
+        def on_task_callback(task_output):
             if self.on_task_complete:
-                self.on_task_complete(task_name, str(result))
+                self.on_task_complete(task_output.name, str(task_output.raw))
+            if task_output.name:
+                save_task_checkpoint(
+                    self.state["output_prefix"],
+                    task_output.name,
+                    task_output.raw,
+                    self.state["assessment_file"],
+                    self.state["png_path"],
+                    self.state["csv_path"],
+                )
+
+        if pending:
+            plot_crew = Crew(
+                agents=[t.agent for t in pending],
+                tasks=pending,
+                process=Process.sequential,
+                task_callback=on_task_callback,
+            )
+            retry_with_backoff(
+                plot_crew.kickoff,
+                label=f"png_csv mini-crew ({len(pending)} task(s))",
+            )
+            for task in pending:
+                print(f"  ├─ Executed {task.name}")
+        else:
+            print("↩️  Resuming: tasks 7-9 already completed")
+
+        # Reload the checkpoint: fresh outputs were saved by the callback during
+        # kickoff, so this is now the single source of truth for all of 7-9.
+        ckpt = load_checkpoint(self.state["output_prefix"])
+        results = {key: get_task_output(ckpt, key) for key in task_keys.values()}
 
         self.state["png_csv_analysis_results"] = results
         print(f"✓ PNG+CSV analysis completed ({len(results)} tasks)")
@@ -251,6 +367,7 @@ def run_apoema_flow(
     model="gemini",
     analysis_id=None,
     on_task_complete=None,
+    fresh=False,
 ):
     """
     Execute the APOEMA assessment analysis pipeline using Flow.
@@ -258,12 +375,13 @@ def run_apoema_flow(
     Args:
         assessment_file: Path to the assessment data JSON file
         pdf_path: Path to optional PDF file
-        output_prefix: Prefix for output files
+        output_prefix: Prefix for output files (also the run id for checkpoints)
         png_path: Path to optional PNG plot image file
         csv_path: Path to optional CSV data file
         model: Model to use - 'gemini' or 'ollama' (default: 'gemini')
         analysis_id: Optional ID of analysis for tracking
         on_task_complete: Optional callback function(task_name, result) for each completed task
+        fresh: If True, ignore any checkpoint for this prefix and re-run all tasks
 
     Returns:
         result: The result from flow.kickoff()
@@ -277,6 +395,7 @@ def run_apoema_flow(
         model=model,
         analysis_id=analysis_id,
         on_task_complete=on_task_complete,
+        fresh=fresh,
     )
 
     flow.plot()

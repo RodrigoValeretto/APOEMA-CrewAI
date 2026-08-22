@@ -27,13 +27,18 @@ def get_connection():
         raise DatabaseError(f"Failed to connect to database: {str(e)}")
 
 
-def create_analysis(analysis_type: str, status: str = AnalysisStatus.PENDING.value) -> int:
+def create_analysis(
+    analysis_type: str,
+    status: str = AnalysisStatus.PENDING.value,
+    model: Optional[str] = None,
+) -> int:
     """
     Create a new analysis record
 
     Args:
         analysis_type: Type of analysis (pdf, png_csv, basic)
         status: Initial status (default: pending)
+        model: LLM model used for the analysis (stored for retry support)
 
     Returns:
         analysis_id
@@ -46,11 +51,11 @@ def create_analysis(analysis_type: str, status: str = AnalysisStatus.PENDING.val
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO analysis (type, status, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO analysis (type, status, model, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (analysis_type, status, datetime.now(), datetime.now()),
+                    (analysis_type, status, model, datetime.now(), datetime.now()),
                 )
                 analysis_id = cur.fetchone()[0]
                 conn.commit()
@@ -78,7 +83,7 @@ def get_analysis(analysis_id: int) -> Dict[str, Any]:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     """
-                    SELECT id, type, status, created_at, updated_at
+                    SELECT id, type, status, model, created_at, updated_at
                     FROM analysis
                     WHERE id = %s
                     """,
@@ -208,6 +213,13 @@ def save_analysis_result(
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
+                # Upsert: a resumed run re-reports tasks restored from the
+                # checkpoint, so replace any previous row for this task instead
+                # of accumulating duplicates.
+                cur.execute(
+                    "DELETE FROM analysis_results WHERE analysis_id = %s AND task_name = %s",
+                    (analysis_id, task_name),
+                )
                 cur.execute(
                     """
                     INSERT INTO analysis_results (analysis_id, task_name, result, created_at)
