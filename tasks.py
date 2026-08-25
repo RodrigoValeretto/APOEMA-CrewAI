@@ -59,7 +59,7 @@ def enqueue_analysis_for_sequential_processing(
     png_file: str = None,
     csv_file: str = None,
     output_prefix: str = None,
-    model: str = "ollama",
+    model: str = "gemini",
 ) -> dict:
     """
     Intermediate task that manages sequential processing of analyses.
@@ -79,7 +79,7 @@ def enqueue_analysis_for_sequential_processing(
         png_file: Path to PNG image file (optional)
         csv_file: Path to CSV data file (optional)
         output_prefix: Prefix for output files
-        model: Model to use (gemini, ollama)
+        model: Model provider to use (default: gemini)
 
     Returns:
         Dictionary with queue status or result of actual processing
@@ -181,7 +181,7 @@ def run_analysis_flow_with_tracking(
     png_file: str = None,
     csv_file: str = None,
     output_prefix: str = None,
-    model: str = "ollama",
+    model: str = "gemini",
 ) -> dict:
     """
     Async task to run APOEMA Flow analysis with database tracking.
@@ -201,7 +201,7 @@ def run_analysis_flow_with_tracking(
         png_file: Path to PNG image file (optional)
         csv_file: Path to CSV data file (optional)
         output_prefix: Prefix for output files
-        model: Model to use (gemini, ollama)
+        model: Model provider to use (default: gemini)
 
     Returns:
         Dictionary with analysis info
@@ -289,7 +289,7 @@ def run_analysis_crew_with_tracking(
         output_prefix: Prefix for output files
         png_file: Path to PNG image file (optional)
         csv_file: Path to CSV data file (optional)
-        model: Model to use (gemini, ollama)
+        model: Model provider to use (default: gemini)
 
     Returns:
         Dictionary with analysis info

@@ -7,7 +7,6 @@ from crewai_files import PDFFile, TextFile, ImageFile
 from crewai.tasks.task_output import TaskOutput
 from apoema_agent import (
     get_llm,
-    describe_image,
     create_agents,
     create_tasks,
 )
@@ -95,26 +94,19 @@ class ApoemaFlow(Flow):
 
         # Prepare input files based on workflow type
         input_files = {"assessment_data": TextFile(source=assessment_file)}
-        image_description = ""
         if self.state["workflow_type"] == "pdf":
             input_files["report_pdf"] = PDFFile(source=pdf_path)
         elif self.state["workflow_type"] == "png_csv":
             input_files["plot_data"] = TextFile(source=csv_path)
-            if model == "ollama":
-                # OpenAI-compatible provider can't send image files; pre-compute
-                # a vision description (OLLAMA_VISION_MODEL) injected into task 7.
-                image_description = describe_image(png_path)
-            else:
-                # Hosted (gemini): attach the chart natively — task 7 receives it
-                # as multimodal content via input_files.
-                input_files["plot_image"] = ImageFile(source=png_path)
+            # Attach the chart natively — task 7 receives it as multimodal
+            # content via input_files.
+            input_files["plot_image"] = ImageFile(source=png_path)
 
         # Create tasks once with their required input files
         tasks = create_tasks(
             output_prefix,
             agents,
             input_files=input_files,
-            image_description=image_description,
         )
         self.state["tasks"] = tasks
         self.state["llm"] = llm
@@ -378,7 +370,7 @@ def run_apoema_flow(
         output_prefix: Prefix for output files (also the run id for checkpoints)
         png_path: Path to optional PNG plot image file
         csv_path: Path to optional CSV data file
-        model: Model to use - 'gemini' or 'ollama' (default: 'gemini')
+        model: Model provider to use (default: 'gemini')
         analysis_id: Optional ID of analysis for tracking
         on_task_complete: Optional callback function(task_name, result) for each completed task
         fresh: If True, ignore any checkpoint for this prefix and re-run all tasks
