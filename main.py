@@ -52,6 +52,12 @@ def parse_arguments():
         default=datetime.now().strftime("%Y%m%d%H%M%S"),
         help="Prefix for output files (default: timestamp of execution)",
     )
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        default=False,
+        help="Ignore the checkpoint for this prefix and re-run all tasks (flow mode)",
+    )
 
     args = parser.parse_args()
     return (
@@ -62,12 +68,22 @@ def parse_arguments():
         args.png_file,
         args.csv_file,
         args.prefix,
+        args.fresh,
     )
 
 
 def main():
     """Main entry point."""
-    exec_mode, model, assessment_file, pdf_path, png_path, csv_path, output_prefix = parse_arguments()
+    (
+        exec_mode,
+        model,
+        assessment_file,
+        pdf_path,
+        png_path,
+        csv_path,
+        output_prefix,
+        fresh,
+    ) = parse_arguments()
 
     print(f"\n🚀 APOEMA - Execution Mode: {exec_mode.upper()}")
     print(f"🤖 Model: {model.upper()}")
@@ -118,7 +134,15 @@ def main():
         run_apoema_pipeline(assessment_file, pdf_path, output_prefix, png_path, csv_path, model)
     else:
         # Flow-based execution
-        run_apoema_flow(assessment_file, pdf_path, output_prefix, png_path, csv_path, model)
+        run_apoema_flow(
+            assessment_file,
+            pdf_path,
+            output_prefix,
+            png_path,
+            csv_path,
+            model,
+            fresh=fresh,
+        )
 
     print("\n" + "=" * 80)
     print("EXECUÇÃO CONCLUÍDA")

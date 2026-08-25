@@ -169,7 +169,7 @@ def enqueue_analysis_for_sequential_processing(
 
 @dramatiq.actor(
     max_retries=2,
-    time_limit=900000,  # 15 minutes in milliseconds (for safety buffer above 10min analysis)
+    time_limit=7200000,  # 120 minutes (covers full 5-task flow even on a loaded/slow host)
     min_backoff=1000,   # 1 second
     max_backoff=30000,  # 30 seconds
     priority=0,         # Normal priority
@@ -265,7 +265,7 @@ def run_analysis_flow_with_tracking(
 
 @dramatiq.actor(
     max_retries=2,
-    time_limit=900000,  # 15 minutes in milliseconds (for safety buffer above 10min analysis)
+    time_limit=7200000,  # 120 minutes (covers full 5-task flow even on a loaded/slow host)
     min_backoff=1000,   # 1 second
     max_backoff=30000,  # 30 seconds
     priority=0,         # Normal priority

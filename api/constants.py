@@ -49,6 +49,7 @@ class TaskName(str, Enum):
 class ErrorCode(str, Enum):
     """Error codes for API responses"""
     ANALYSIS_NOT_FOUND = "ANALYSIS_NOT_FOUND"
+    INVALID_ANALYSIS_STATE = "INVALID_ANALYSIS_STATE"
     INVALID_INPUT = "INVALID_INPUT"
     FILE_NOT_FOUND = "FILE_NOT_FOUND"
     DATABASE_ERROR = "DATABASE_ERROR"

@@ -5,7 +5,7 @@ description: |
   
   2. **Geração de Insights Acionáveis:** Extraia conclusões que permitam ao coordenador do curso agir. Diferencie pontos de celebração de áreas de risco iminente.
   
-  3. **Alinhamento CAPES:** Relacione os achados com os critérios de avaliação da ficha de avaliação da CAPES para a área específica, utilizando o contexto de `{assessment_data}`.
+  3. **Alinhamento CAPES:** Relacione os achados com os critérios de avaliação da ficha de avaliação da CAPES para a área específica, utilizando os critérios da ficha de avaliação.
   
   4. **Síntese Executiva:** Resuma as descobertas principais de forma clara e concisa, adequada para apresentação a stakeholders.
   

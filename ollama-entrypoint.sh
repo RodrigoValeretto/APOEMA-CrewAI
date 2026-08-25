@@ -1,18 +1,25 @@
 #!/bin/bash
 
-# Function to pull model asynchronously
+# Function to pull a model asynchronously
 pull_model_in_background() {
+    local model=$1
     sleep 5
-    echo "Pulling gemma3:4b model in background..."
-    if /bin/ollama pull gemma3:4b; then
-        echo "✓ Model pulled successfully!"
+    echo "Pulling $model model in background..."
+    if /bin/ollama pull "$model"; then
+        echo "✓ Model $model pulled successfully!"
     else
-        echo "✗ Failed to pull model - will try again on next startup"
+        echo "✗ Failed to pull $model - will try again on next startup"
     fi
 }
 
-# Start model pull in background
-pull_model_in_background &
+# Pull LLM model (tool-calling capable; override via OLLAMA_MODEL env)
+pull_model_in_background "${OLLAMA_MODEL:-phi4-mini:3.8b}" &
+
+# Pull vision model for chart analysis (override via OLLAMA_VISION_MODEL env)
+pull_model_in_background "${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}" &
+
+# Pull embedding model for CrewAI's Knowledge feature
+pull_model_in_background "nomic-embed-text" &
 
 # Start and keep Ollama running in foreground
 echo "Starting Ollama server..."

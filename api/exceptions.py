@@ -41,6 +41,17 @@ class AnalysisNotFound(ApoemaException):
         )
 
 
+class InvalidAnalysisState(ApoemaException):
+    """Analysis is not in a state that allows the requested operation"""
+
+    def __init__(self, detail: str):
+        super().__init__(
+            detail=detail,
+            error_code=ErrorCode.INVALID_ANALYSIS_STATE,
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
 class FileNotFound(ApoemaException):
     """File not found"""
 

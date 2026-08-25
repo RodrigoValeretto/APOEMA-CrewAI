@@ -10,7 +10,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from datetime import datetime
 from typing import Optional
 import os
@@ -46,11 +46,13 @@ from .constants import (
     FileType,
     ErrorCode,
     EXPECTED_TASKS,
+    DEFAULT_MODEL,
 )
 from .exceptions import (
     ApoemaException,
     AnalysisNotFound,
     InvalidAnalysisInput,
+    InvalidAnalysisState,
     InvalidURL,
     DatabaseError,
 )
@@ -79,9 +81,9 @@ app = FastAPI(
 @app.exception_handler(ApoemaException)
 async def apoema_exception_handler(request, exc: ApoemaException):
     """Handle APOEMA custom exceptions"""
-    return HTTPException(
+    return JSONResponse(
         status_code=exc.status_code,
-        detail={
+        content={
             "error": exc.error_code.value,
             "message": exc.detail,
             "timestamp": datetime.now().isoformat(),
@@ -92,9 +94,9 @@ async def apoema_exception_handler(request, exc: ApoemaException):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc: HTTPException):
     """Handle HTTP exceptions"""
-    return HTTPException(
+    return JSONResponse(
         status_code=exc.status_code,
-        detail={
+        content={
             "error": ErrorCode.INTERNAL_SERVER_ERROR.value,
             "message": str(exc.detail),
             "timestamp": datetime.now().isoformat(),
@@ -262,6 +264,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         analysis_id = database.create_analysis(
             analysis_type=workflow_type,
             status=AnalysisStatus.PENDING.value,
+            model=request.model,
         )
 
         # Collect all file IDs for mapping (both downloaded and passed as reference)
@@ -304,6 +307,78 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             type=workflow_type,
             status=AnalysisStatus.PENDING.value,
             created_at=datetime.now(),
+        )
+
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/analysis/{analysis_id}/retry",
+    response_model=AnalysisResponse,
+    tags=["Analysis"],
+)
+async def retry_analysis_endpoint(analysis_id: int):
+    """
+    Re-queue a failed analysis.
+
+    Uses the same analysis_id (and therefore the same output_prefix), so the
+    flow resumes from the last checkpointed task instead of starting over.
+    """
+    try:
+        analysis = database.get_analysis(analysis_id)
+
+        if analysis["status"] != AnalysisStatus.FAILED.value:
+            raise InvalidAnalysisState(
+                f"Only failed analyses can be retried (current status: {analysis['status']})"
+            )
+
+        # Rebuild the original input file paths from the stored mappings
+        files = database.get_analysis_files(analysis_id)
+        paths = {f["file_type"]: f["file_path"] for f in files}
+        assessment_file = paths.get(FileType.ASSESSMENT.value)
+        if not assessment_file:
+            raise InvalidAnalysisInput(
+                "Analysis has no assessment file mapping; cannot retry"
+            )
+
+        # Guard against missing input files (the flow would fail at startup)
+        for label, path in (
+            ("assessment", assessment_file),
+            ("pdf", paths.get(FileType.PDF.value)),
+            ("png", paths.get(FileType.PNG.value)),
+            ("csv", paths.get(FileType.CSV.value)),
+        ):
+            if path and not os.path.exists(path):
+                raise InvalidAnalysisInput(
+                    f"Input file for '{label}' no longer exists: {path}"
+                )
+
+        model = analysis.get("model") or os.getenv("DEFAULT_MODEL") or DEFAULT_MODEL
+        validate_model_choice(model)
+
+        # Re-enqueue with the SAME output_prefix so the checkpoint is resumed
+        enqueue_analysis_for_sequential_processing.send(
+            analysis_id=analysis_id,
+            assessment_file=assessment_file,
+            pdf_file=paths.get(FileType.PDF.value) or "",
+            png_file=paths.get(FileType.PNG.value) or "",
+            csv_file=paths.get(FileType.CSV.value) or "",
+            output_prefix=f"analysis_{analysis_id}",
+            model=model,
+        )
+        database.update_analysis_status(analysis_id, AnalysisStatus.PROCESSING.value)
+
+        return AnalysisResponse(
+            id=analysis_id,
+            type=analysis["type"],
+            status=AnalysisStatus.PROCESSING.value,
+            created_at=analysis["created_at"],
         )
 
     except ApoemaException:
@@ -575,7 +650,9 @@ async def upload_pdf_file(
     file: UploadFile = File(...),
     analysis_id: Optional[int] = Query(None),
 ):
-    """Upload PDF report file"""
+    """
+    Upload PDF report file
+    """
     try:
         file_id, file_path = await file_manager.save_uploaded_file(
             file,
@@ -645,7 +722,9 @@ async def upload_csv_file(
     file: UploadFile = File(...),
     analysis_id: Optional[int] = Query(None),
 ):
-    """Upload CSV data file"""
+    """
+    Upload CSV data file
+    """
     try:
         file_id, file_path = await file_manager.save_uploaded_file(
             file,

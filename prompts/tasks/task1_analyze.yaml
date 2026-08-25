@@ -1,9 +1,9 @@
 description: |
-  Realize uma análise técnica e estrutural do conteúdo extraído da ficha de avaliação da CAPES fornecida no campo `{assessment_data}`. O objetivo é transformar a transcrição bruta em um esquema lógico de critérios de avaliação.
+  Realize uma análise técnica e estrutural da ficha de avaliação da CAPES. O conteúdo relevante da ficha é fornecido como contexto adicional ("Additional Information") nesta tarefa.
 
   Você deve identificar e mapear obrigatoriamente:
 
-  1. **Metadados da Ficha:** Área de avaliação (ex: Interdisciplinar, Medicina), Quadriênio e data de publicação.
+  1. **Metadados da Ficha:** Área de avaliação (ex: Ciência da Computação), Quadriênio e data de publicação.
   2. **Taxonomia da Avaliação:** Mapeie a hierarquia de Quesitos, Itens e Indicadores.
   3. **Métricas de Desempenho:** Extraia quais são os indicadores quantitativos (ex: N de publicações por docente) e qualitativos (ex: impacto social) exigidos.
   4. **Réguas de Nota:** Identifique os critérios que diferenciam um programa "Bom" (Nota 4) de um programa de "Excelência" (Notas 6 e 7).
