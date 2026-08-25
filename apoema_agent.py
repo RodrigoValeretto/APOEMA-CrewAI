@@ -3,7 +3,7 @@ import os
 from crewai import Agent, Task, Crew, Process, LLM
 from crewai_files import PDFFile, TextFile, ImageFile
 from prompt_loader import load_agent_prompt, load_task_prompt
-from rag import ImageDescriptionTool
+from rag import describe_image
 from retry_utils import retry_with_backoff
 
 
@@ -58,18 +58,6 @@ def get_llm(model: str = "gemini"):
         api_key=os.getenv("GEMINI_API_KEY"),
         temperature=0.4,
     )
-
-
-def describe_image(image_path: str) -> str:
-    """Describe a chart image with the local vision model (Ollama fallback).
-
-    Hosted models see the image natively via task input_files (multimodal), so
-    this pre-computed description is only used when running with 'ollama',
-    whose CrewAI provider does not accept image files.
-    """
-    from rag import ImageDescriptionTool
-
-    return ImageDescriptionTool(image_path=image_path)._run("")
 
 
 def get_embedder():
@@ -181,10 +169,10 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
     used only as the Ollama fallback (injected into task 7's prompt); hosted
     models receive the image natively via `input_files`.
 
-    Read text file contents and interpolate the {plot_data} placeholder in the
-    task prompts. CrewAI's `input_files` attach files as *multimodal*
-    attachments (which text-only Ollama models ignore), so the placeholders
-    would otherwise stay literal and the models would never see the actual data.
+    Only task 7's prompt contains a {plot_data} placeholder; the CSV text is
+    interpolated here because text-only fallback models (ollama) receive no
+    input_files, while hosted models also get the file attached via
+    `input_files`.
     """
     _MAX_TEXT_CHARS = 3000
 
@@ -198,15 +186,6 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
 
     plot_data_text = _read_text(input_files.get("plot_data"))
 
-    def _interp(desc):
-        # The assessment data is fed via CrewAI's native Knowledge feature (see
-        # create_agents / ApoemaFlow) which auto-injects relevant chunks into the
-        # prompt as "Additional Information" — no manual injection or tool-calling.
-        desc = desc.replace("{plot_data}", plot_data_text, 1)
-        desc = desc.replace("{plot_data}", "(dados do CSV fornecidos acima)")
-        desc = desc.replace("{plot_image}", "")  # image attached via input_files
-        return desc
-
     (
         data_reader,
         summarizer,
@@ -219,7 +198,7 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
     # Task 1: Data Analysis
     task1_config = load_task_prompt("task1_analyze")
     task1 = Task(
-        description=_interp(task1_config["description"]),
+        description=task1_config["description"],
         agent=data_reader,
         expected_output=task1_config["expected_output"],
         input_files={"assessment_data": input_files.get("assessment_data")},
@@ -229,7 +208,7 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
     # Task 2: Summarization
     task2_config = load_task_prompt("task2_summarize")
     task2 = Task(
-        description=_interp(task2_config["description"]),
+        description=task2_config["description"],
         agent=summarizer,
         expected_output=task2_config["expected_output"],
         markdown=True,
@@ -267,7 +246,7 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         # Task 5: Map visualizations to CAPES criteria
         task5_config = load_task_prompt("task5_criteria_mapping")
         task5 = Task(
-            description=_interp(task5_config["description"]),
+            description=task5_config["description"],
             agent=report_analyzer,
             expected_output=task5_config["expected_output"],
             markdown=True,
@@ -305,7 +284,12 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         # (image_description) injected as text, since CrewAI's OpenAI-compatible
         # provider does not send image files.
         task7_config = load_task_prompt("task7_plot_data_analysis")
-        task7_desc = _interp(task7_config["description"])
+        # Task 7 is the only prompt with a {plot_data} placeholder; the CSV
+        # text is inlined because the ollama fallback strips input_files
+        # (text-only model), while hosted models also receive the file natively.
+        task7_desc = task7_config["description"].replace(
+            "{plot_data}", plot_data_text or "(dados do CSV fornecidos acima)"
+        )
         if image_description:
             task7_desc += (
                 "\n\nOBSERVAÇÃO: a imagem não está anexada (modelo local sem "
@@ -335,7 +319,7 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         # Task 8: Generate insights and narrative from analysis
         task8_config = load_task_prompt("task8_plot_insights")
         task8 = Task(
-            description=_interp(task8_config["description"]),
+            description=task8_config["description"],
             agent=plot_insights_generator,
             expected_output=task8_config["expected_output"],
             markdown=True,
@@ -348,7 +332,7 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         # Task 9: Assess utility and importance of the plot
         task9_config = load_task_prompt("task9_plot_utility_importance")
         task9 = Task(
-            description=_interp(task9_config["description"]),
+            description=task9_config["description"],
             agent=utility_assessor,
             expected_output=task9_config["expected_output"],
             markdown=True,

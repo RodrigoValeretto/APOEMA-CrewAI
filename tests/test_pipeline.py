@@ -90,16 +90,16 @@ def test_create_tasks_png_csv_workflow():
     assert all((t.tools or []) == [] for t in tasks)
 
 
-# ─── Image description tool ────────────────────────────────────────
+# ─── Image description helper ──────────────────────────────────────
 
 
-def test_image_description_tool_imports():
-    """ImageDescriptionTool must import and expose the vision tool."""
-    from rag import ImageDescriptionTool
+def test_describe_image_imports():
+    """describe_image must import as a plain function and fail gracefully."""
+    from rag import describe_image
 
-    tool = ImageDescriptionTool.model_construct()
-    assert tool.name == "Describe Image"
-    assert "see and analyze" in tool.description.lower()
+    assert callable(describe_image)
+    # Missing file → error string, not an exception
+    assert "Error: image file not found" in describe_image("nonexistent.png")
 
 
 # ─── Syntax + packaging ────────────────────────────────────────────
