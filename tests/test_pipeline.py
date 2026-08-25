@@ -26,13 +26,13 @@ def test_create_agents_have_no_tools():
         )
 
 
-def test_get_embedder_is_ollama():
-    """The Knowledge embedder must use the Ollama provider + nomic-embed-text."""
+def test_get_embedder_is_google():
+    """The Knowledge embedder must use the Google provider + gemini-embedding-001."""
     from apoema_agent import get_embedder
 
     embedder = get_embedder()
-    assert embedder["provider"] == "ollama"
-    assert embedder["config"]["model_name"] == "nomic-embed-text"
+    assert embedder["provider"] == "google-generativeai"
+    assert embedder["config"]["model_name"] == "gemini-embedding-001"
 
 
 def test_get_llm_supports_multiple_providers():
@@ -45,7 +45,7 @@ def test_get_llm_supports_multiple_providers():
     from apoema_agent import get_llm
 
     built = []
-    for provider in ("ollama", "gemini", "openai", "anthropic", "deepseek", "groq"):
+    for provider in ("gemini", "openai", "anthropic", "deepseek", "groq"):
         try:
             llm = get_llm(model=provider)
             assert llm is not None, f"get_llm({provider}) returned None"
@@ -53,7 +53,7 @@ def test_get_llm_supports_multiple_providers():
         except ImportError:
             continue  # provider SDK not installed
 
-    assert {"ollama", "gemini", "openai"} <= set(built)
+    assert {"gemini", "openai"} <= set(built)
 
 
 # ─── Task wiring ───────────────────────────────────────────────────
@@ -90,18 +90,6 @@ def test_create_tasks_png_csv_workflow():
     assert all((t.tools or []) == [] for t in tasks)
 
 
-# ─── Image description helper ──────────────────────────────────────
-
-
-def test_describe_image_imports():
-    """describe_image must import as a plain function and fail gracefully."""
-    from rag import describe_image
-
-    assert callable(describe_image)
-    # Missing file → error string, not an exception
-    assert "Error: image file not found" in describe_image("nonexistent.png")
-
-
 # ─── Syntax + packaging ────────────────────────────────────────────
 
 
@@ -110,8 +98,6 @@ def test_core_files_have_valid_syntax():
     for path in [
         "apoema_agent.py",
         "apoema_flow.py",
-        "rag/__init__.py",
-        "rag/image_description_tool.py",
     ]:
         with open(path) as f:
             ast.parse(f.read())

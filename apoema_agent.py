@@ -3,7 +3,6 @@ import os
 from crewai import Agent, Task, Crew, Process, LLM
 from crewai_files import PDFFile, TextFile, ImageFile
 from prompt_loader import load_agent_prompt, load_task_prompt
-from rag import describe_image
 from retry_utils import retry_with_backoff
 
 
@@ -12,7 +11,6 @@ def get_llm(model: str = "gemini"):
     """Create and return the LLM instance.
 
     Supported providers (see MODEL_ALTERNATIVES_STUDY.md):
-      - 'ollama': local model (OLLAMA_MODEL, default phi4-mini:3.8b)
       - 'gemini': Google Gemini Flash (GEMINI_API_KEY) — recommended, has vision
       - 'openai': OpenAI (OPENAI_API_KEY) — gpt-4o-mini, has vision
       - 'anthropic': Anthropic Claude Haiku (ANTHROPIC_API_KEY) — has vision
@@ -21,17 +19,6 @@ def get_llm(model: str = "gemini"):
 
     Hosted providers read their API key from the environment.
     """
-    if model == "ollama":
-        ollama_host = os.getenv(
-            "OLLAMA_HOST", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        )
-        ollama_model = os.getenv("OLLAMA_MODEL", "phi4-mini:3.8b")
-        return LLM(
-            model=f"ollama/{ollama_model}",
-            base_url=ollama_host,
-            temperature=0.4,
-        )
-
     # Hosted providers: (crewai model string, env var for the API key).
     # Model names reflect the current catalog (Aug/2026) — see MODEL_ALTERNATIVES_STUDY.md.
     providers = {
@@ -61,21 +48,17 @@ def get_llm(model: str = "gemini"):
 
 
 def get_embedder():
-    """Return CrewAI's Ollama embedder config for the native Knowledge feature.
+    """Return CrewAI's Google (Gemini) embedder config for the native Knowledge feature.
 
     CrewAI's `Knowledge` system chunks + embeds sources and injects the top
-    relevant chunks into the task prompt automatically — no tool-calling. This
-    is the reliable alternative to the removed pgvector RAG tool, whose native
-    tool-calling does not execute under CrewAI's ollama provider.
+    relevant chunks into the task prompt automatically — no tool-calling and no
+    local services required (hosted Google embeddings).
     """
-    ollama_host = os.getenv(
-        "OLLAMA_HOST", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    )
     return {
-        "provider": "ollama",
+        "provider": "google-generativeai",
         "config": {
-            "url": f"{ollama_host}/api/embeddings",
-            "model_name": os.getenv("RAG_EMBEDDING_MODEL", "nomic-embed-text"),
+            "api_key": os.getenv("GEMINI_API_KEY"),
+            "model_name": os.getenv("EMBEDDING_MODEL", "gemini-embedding-001"),
         },
     }
 
@@ -162,17 +145,13 @@ def create_agents(llm, knowledge_sources=None):
     )
 
 
-def create_tasks(output_prefix, agents, input_files, image_description=""):
+def create_tasks(output_prefix, agents, input_files):
     """Create and return all tasks with their required input files.
 
-    `image_description` is a pre-computed visual description of the plot image,
-    used only as the Ollama fallback (injected into task 7's prompt); hosted
-    models receive the image natively via `input_files`.
-
-    Only task 7's prompt contains a {plot_data} placeholder; the CSV text is
-    interpolated here because text-only fallback models (ollama) receive no
-    input_files, while hosted models also get the file attached via
-    `input_files`.
+    Plot images reach the model natively via `input_files` (multimodal). Only
+    task 7's prompt contains a {plot_data} placeholder; the CSV text is
+    interpolated inline so the model sees the data even before reading the
+    attached file.
     """
     _MAX_TEXT_CHARS = 3000
 
@@ -275,38 +254,19 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         tasks.extend([task3, task4, task5, task6])
 
     # Optional Tasks 7-9: PNG + CSV Plot Analysis (if plot files are available)
-    elif input_files.get("plot_data") and (
-        input_files.get("plot_image") or image_description
-    ):
-        # Task 7: Analyze the attached PNG chart + CSV data. Hosted models
-        # (gemini) receive the image natively via input_files (multimodal);
-        # for 'ollama' the caller pre-computes a vision description
-        # (image_description) injected as text, since CrewAI's OpenAI-compatible
-        # provider does not send image files.
+    elif input_files.get("plot_data") and input_files.get("plot_image"):
+        # Task 7: Analyze the attached PNG chart + CSV data (native multimodal).
         task7_config = load_task_prompt("task7_plot_data_analysis")
         # Task 7 is the only prompt with a {plot_data} placeholder; the CSV
-        # text is inlined because the ollama fallback strips input_files
-        # (text-only model), while hosted models also receive the file natively.
+        # text is inlined so the model sees the data even before reading the
+        # attached file.
         task7_desc = task7_config["description"].replace(
             "{plot_data}", plot_data_text or "(dados do CSV fornecidos acima)"
         )
-        if image_description:
-            task7_desc += (
-                "\n\nOBSERVAÇÃO: a imagem não está anexada (modelo local sem "
-                "suporte multimodal). Use esta descrição visual obtida pela "
-                "ferramenta de visão para a interpretação visual:\n"
-                f"{image_description}"
-            )
         task7_input_files: dict = {}
-        if not image_description:
-            # Hosted (multimodal) models: attach the CSV + PNG natively.
-            # For the ollama fallback (image_description set), attaching ANY
-            # input_file triggers CrewAI's supports_multimodal() gate (phi4-mini
-            # is text-only) — the CSV already reaches the model via the
-            # {plot_data} interpolation in the prompt instead.
-            task7_input_files["plot_data"] = input_files.get("plot_data")
-            if input_files.get("plot_image"):
-                task7_input_files["plot_image"] = input_files["plot_image"]
+        task7_input_files["plot_data"] = input_files.get("plot_data")
+        if input_files.get("plot_image"):
+            task7_input_files["plot_image"] = input_files["plot_image"]
         task7 = Task(
             description=task7_desc,
             agent=plot_data_analyst,
@@ -364,7 +324,7 @@ def run_apoema_pipeline(
         output_prefix: Prefix for output files
         png_path: Path to optional PNG plot image file
         csv_path: Path to optional CSV data file
-        model: Model to use - 'gemini' or 'ollama' (default: 'gemini')
+        model: Model provider to use (default: 'gemini')
 
     Returns:
         result: The result from crew.kickoff()
@@ -386,26 +346,19 @@ def run_apoema_pipeline(
     ) = agents
     crew_agents = [data_reader, summarizer]
 
-    image_description = ""
     if pdf_path:
         crew_agents.extend([report_analyzer, utility_assessor])
         input_files["report_pdf"] = PDFFile(source=pdf_path)
     elif png_path and csv_path:
         crew_agents.extend([plot_data_analyst, plot_insights_generator, utility_assessor])
         input_files["plot_data"] = TextFile(source=csv_path)
-        if model == "ollama":
-            # OpenAI-compatible provider can't send images; pre-compute a vision
-            # description and inject it into task 7's prompt instead.
-            image_description = describe_image(png_path)
-        else:
-            input_files["plot_image"] = ImageFile(source=png_path)
+        input_files["plot_image"] = ImageFile(source=png_path)
 
     # Create tasks with their required input files
     tasks = create_tasks(
         output_prefix,
         agents,
         input_files=input_files,
-        image_description=image_description,
     )
 
     crew = Crew(

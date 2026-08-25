@@ -163,7 +163,7 @@ def validate_model_choice(model: str) -> bool:
     Raises:
         UnsupportedModel: If model is not supported
     """
-    supported_models = [ModelType.GEMINI.value, ModelType.OLLAMA.value]
+    supported_models = [ModelType.GEMINI.value]
 
     if model not in supported_models:
         raise UnsupportedModel(model, supported_models)

@@ -18,9 +18,9 @@ def parse_arguments():
     parser.add_argument(
         "--model",
         type=str,
-        choices=["gemini", "ollama"],
+        choices=["gemini"],
         default="gemini",
-        help="Model to use: 'gemini' for Google Gemini, 'ollama' for Ollama with Gemma3:4b (default: gemini)",
+        help="Model provider to use (default: gemini)",
     )
     parser.add_argument(
         "--assessment-file",
@@ -125,7 +125,7 @@ def main():
         print(
             "   4. Com prefixo customizado: python main.py --model gemini --assessment-file <arquivo.json> --prefix my_run"
         )
-        print("   5. Com Ollama: python main.py --model ollama --assessment-file <arquivo.json>")
+
         print("\nExecutando apenas tarefas 1 e 2...\n")
 
     # Execute based on selected mode

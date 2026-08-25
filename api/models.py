@@ -68,9 +68,9 @@ class AnalysisRequest(BaseModel):
         examples=["https://example.com/data.csv"],
     )
     model: str = Field(
-        default=ModelType.OLLAMA.value,
+        default=ModelType.GEMINI.value,
         description="LLM model to use",
-        pattern="^(gemini|ollama)$",
+        pattern="^gemini$",
     )
 
     model_config = {

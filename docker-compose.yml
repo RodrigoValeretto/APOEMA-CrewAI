@@ -59,24 +59,6 @@ services:
     networks:
       - apoema_network
 
-  # Ollama server para modelos de LLM
-  ollama:
-    image: ollama/ollama:latest
-    container_name: apoema-ollama
-    ports:
-      - "${OLLAMA_PORT:-11434}:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-      - ./ollama-entrypoint.sh:/ollama-entrypoint.sh:ro
-    environment:
-      OLLAMA_NUM_PARALLEL: 1
-      OLLAMA_NUM_GPU: 1
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi4-mini:3.8b}
-      OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
-    networks:
-      - apoema_network
-    entrypoint: ["/bin/bash", "/ollama-entrypoint.sh"]
-
   # Worker Dramatiq (executará tarefas assíncronas)
   dramatiq_worker:
     build:
@@ -92,10 +74,6 @@ services:
       DB_NAME: ${DB_NAME:-apoema_db}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
       DRAMATIQ_BROKER_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
-      OLLAMA_HOST: http://ollama:11434
-      OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi4-mini:3.8b}
-      OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -116,8 +94,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      ollama:
-        condition: service_started
       flyway:
         condition: service_completed_successfully
     volumes:
@@ -147,10 +123,6 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-apoema_dev_password}
       DB_NAME: ${DB_NAME:-apoema_db}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
-      OLLAMA_HOST: http://ollama:11434
-      OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi4-mini:3.8b}
-      OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
       PYTHONUNBUFFERED: 1
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
@@ -166,8 +138,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      ollama:
-        condition: service_started
       flyway:
         condition: service_completed_successfully
     volumes:
@@ -183,7 +153,6 @@ services:
 volumes:
   postgres_data:
   rabbitmq_data:
-  ollama_data:
 
 networks:
   apoema_network:

@@ -22,7 +22,6 @@ class AnalysisStatus(str, Enum):
 class ModelType(str, Enum):
     """Supported LLM models"""
     GEMINI = "gemini"
-    OLLAMA = "ollama"
 
 
 class FileType(str, Enum):
@@ -96,7 +95,7 @@ HTTP_SERVICE_UNAVAILABLE = 503
 # Default values
 DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 100
-DEFAULT_MODEL = ModelType.OLLAMA.value
+DEFAULT_MODEL = ModelType.GEMINI.value
 
 # Pagination
 DEFAULT_SKIP = 0
