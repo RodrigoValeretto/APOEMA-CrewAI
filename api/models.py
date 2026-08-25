@@ -72,6 +72,15 @@ class AnalysisRequest(BaseModel):
         description="LLM model to use",
         pattern="^(gemini|ollama)$",
     )
+    important_programs: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Program identifiers (Sigla values from the plot CSV) marked as "
+            "important by the user; the plot highlights them and the AI insights "
+            "must consider them"
+        ),
+        examples=[["UFPA-A-5-CC", "UFBA-A-5-CC"]],
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -144,6 +153,10 @@ class AnalysisResponse(BaseModel):
     type: str = Field(..., description="Analysis type (pdf, png_csv, basic)")
     status: str = Field(..., description="Current analysis status")
     created_at: datetime = Field(..., description="Creation timestamp")
+    important_programs: Optional[List[str]] = Field(
+        None,
+        description="Program identifiers marked as important by the user",
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -209,6 +222,10 @@ class AnalysisDetailResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    important_programs: Optional[List[str]] = Field(
+        None,
+        description="Program identifiers marked as important by the user",
+    )
     results: List[TaskResult] = Field(default_factory=list)
     progress: ProgressInfo
 
@@ -247,6 +264,10 @@ class AnalysisListItem(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     results_count: int = Field(
         default=0, description="Number of results/tasks completed"
+    )
+    important_programs: Optional[List[str]] = Field(
+        None,
+        description="Program identifiers marked as important by the user",
     )
 
     model_config = {

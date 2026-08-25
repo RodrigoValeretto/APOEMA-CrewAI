@@ -23,6 +23,12 @@ def parse_arguments():
         help="Model to use: 'gemini' for Google Gemini, 'ollama' for Ollama with Gemma3:4b (default: gemini)",
     )
     parser.add_argument(
+        "--important-programs",
+        type=str,
+        default=None,
+        help="Comma-separated list of program identifiers (Sigla values from the plot CSV) marked as important by the user",
+    )
+    parser.add_argument(
         "--assessment-file",
         type=str,
         default="assessment_data.json",
@@ -63,6 +69,7 @@ def parse_arguments():
     return (
         args.exec_mode,
         args.model,
+        args.important_programs,
         args.assessment_file,
         args.pdf_file,
         args.png_file,
@@ -77,6 +84,7 @@ def main():
     (
         exec_mode,
         model,
+        important_programs_raw,
         assessment_file,
         pdf_path,
         png_path,
@@ -84,6 +92,12 @@ def main():
         output_prefix,
         fresh,
     ) = parse_arguments()
+
+    important_programs = (
+        [p.strip() for p in important_programs_raw.split(",") if p.strip()]
+        if important_programs_raw
+        else None
+    )
 
     print(f"\n🚀 APOEMA - Execution Mode: {exec_mode.upper()}")
     print(f"🤖 Model: {model.upper()}")
@@ -131,7 +145,15 @@ def main():
     # Execute based on selected mode
     if exec_mode == "crew":
         # Traditional Crew execution
-        run_apoema_pipeline(assessment_file, pdf_path, output_prefix, png_path, csv_path, model)
+        run_apoema_pipeline(
+            assessment_file,
+            pdf_path,
+            output_prefix,
+            png_path,
+            csv_path,
+            model,
+            important_programs=important_programs,
+        )
     else:
         # Flow-based execution
         run_apoema_flow(
@@ -141,6 +163,7 @@ def main():
             png_path,
             csv_path,
             model,
+            important_programs=important_programs,
             fresh=fresh,
         )
 
