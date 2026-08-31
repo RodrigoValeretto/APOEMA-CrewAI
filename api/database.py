@@ -201,6 +201,68 @@ def update_analysis_status(analysis_id: int, new_status: str) -> None:
         raise DatabaseError(f"Failed to update analysis status: {str(e)}")
 
 
+# Advisory lock key serializing the sequential-processing gate across ALL
+# workers/processes. Any value works as long as every claimant uses the same.
+_ANALYSIS_GATE_LOCK = 727001
+
+
+def claim_analysis_for_processing(analysis_id: int) -> bool:
+    """
+    Atomically claim the single-processing slot for `analysis_id`.
+
+    The gate is enforced with a Postgres advisory transaction lock plus a
+    compare-and-swap on the status column, so concurrent workers can NEVER
+    both observe "no one is processing" and both start (the check-then-act
+    race the naive FIFO check suffered from).
+
+    Succeeds only when:
+      - the analysis is not already 'completed', and
+      - no OTHER analysis is currently 'processing', and
+      - no OLDER (lower-id) analysis is pending/processing/queued (FIFO).
+
+    Returns True when the caller now owns the slot (status flipped to
+    'processing'); False otherwise (caller must requeue through the gate).
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # Serialize all claim attempts: only one worker passes this
+                # point at a time, eliminating the check-then-act race.
+                cur.execute("SELECT pg_advisory_xact_lock(%s)", (_ANALYSIS_GATE_LOCK,))
+
+                cur.execute(
+                    "SELECT COUNT(*) FROM analysis WHERE status = 'processing' AND id != %s",
+                    (analysis_id,),
+                )
+                processing_count = cur.fetchone()
+                if processing_count is not None and processing_count[0] > 0:
+                    return False
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) FROM analysis
+                    WHERE id < %s AND status IN ('pending', 'processing', 'queued')
+                    """,
+                    (analysis_id,),
+                )
+                older_count = cur.fetchone()
+                if older_count is not None and older_count[0] > 0:
+                    return False
+
+                cur.execute(
+                    """
+                    UPDATE analysis
+                    SET status = 'processing', updated_at = %s
+                    WHERE id = %s AND status != 'completed'
+                    """,
+                    (datetime.now(), analysis_id),
+                )
+                conn.commit()
+                return cur.rowcount > 0
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to claim analysis slot: {str(e)}")
+
+
 def save_analysis_result(
     analysis_id: int,
     task_name: str,

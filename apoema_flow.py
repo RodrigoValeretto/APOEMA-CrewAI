@@ -232,8 +232,9 @@ class ApoemaFlow(Flow):
         print("\n📄 Running PDF analysis...")
 
         tasks = self.state["tasks"]
+        ckpt = self.state["checkpoint"]
 
-        # Map task indices to task names
+        # Map task indices to task names (must match the API's task-name constants)
         task_names = {
             3: "task_3_extract_plots",
             4: "task_4_analyze_plots",
@@ -241,19 +242,38 @@ class ApoemaFlow(Flow):
             6: "task_6_utility_assessment",
         }
 
+        done = completed_tasks(ckpt)
+
         # Execute PDF-related tasks (3-6)
         results = {}
         for idx, task in enumerate(tasks[2:], start=3):
-            print(f"  ├─ Executing Task {idx}...")
-            result = retry_with_backoff(
-                task.execute_sync,
-                label=f"task_{idx}",
-            )
-            results[f"task_{idx}"] = result
+            task_name = task_names.get(idx, f"task_{idx}")
+            if task_name in done:
+                print(f"↩️  Resuming: {task_name} already completed — restoring from checkpoint")
+                task.output = _restore_task_output(
+                    task,
+                    task_name,
+                    get_task_output(ckpt, task_name),
+                )
+                result = task.output
+            else:
+                print(f"  ├─ Executing Task {idx}...")
+                result = retry_with_backoff(
+                    task.execute_sync,
+                    label=task_name,
+                )
+                save_task_checkpoint(
+                    self.state["output_prefix"],
+                    task_name,
+                    result.raw,
+                    self.state["assessment_file"],
+                    self.state["png_path"],
+                    self.state["csv_path"],
+                )
+            results[task_name] = result
 
             # Call callback if provided
             if self.on_task_complete:
-                task_name = task_names.get(idx, f"task_{idx}")
                 self.on_task_complete(task_name, str(result))
 
         self.state["pdf_analysis_results"] = results

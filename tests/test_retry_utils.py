@@ -60,6 +60,40 @@ def test_transient_rejects_non_transient():
     assert is_transient_error(err) is False, "400 is not transient"
 
 
+def test_daily_quota_429_is_not_transient():
+    """Daily-quota exhaustion (PerDay quotaId) must fail fast, not retry."""
+    from retry_utils import is_transient_error
+
+    msg = (
+        "429 RESOURCE_EXHAUSTED. Quota exceeded for metric: "
+        "generativelanguage.googleapis.com/generate_content_free_tier_requests, "
+        "limit: 20, model: gemini-2.5-flash. quotaId: "
+        "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+    )
+    err = FakeAPIError(msg)
+    err.code = 429
+    assert is_transient_error(err) is False, "daily quota 429 must not be retried"
+
+    # The same 429 without the PerDay marker (per-minute rate limit) IS transient
+    err2 = FakeAPIError("429 RESOURCE_EXHAUSTED. Please retry in 10s.")
+    err2.code = 429
+    assert is_transient_error(err2) is True, "per-minute 429 should still retry"
+
+
+def test_daily_quota_via_fallback_message():
+    """Non-genai errors carrying the PerDay marker in their text also fail fast."""
+    from retry_utils import is_transient_error
+
+    class GenericErr(Exception):
+        pass
+
+    msg = (
+        "429 RESOURCE_EXHAUSTED - GenerateRequestsPerDayPerProjectPerModel "
+        "free_tier_requests limit 20"
+    )
+    assert is_transient_error(GenericErr(msg)) is False
+
+
 # ─── Retry with backoff ─────────────────────────────────────────────
 
 
