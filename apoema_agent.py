@@ -162,7 +162,7 @@ def create_agents(llm, knowledge_sources=None):
     )
 
 
-def create_tasks(output_prefix, agents, input_files, image_description=""):
+def create_tasks(output_prefix, agents, input_files, image_description="", important_programs=None):
     """Create and return all tasks with their required input files.
 
     `image_description` is a pre-computed visual description of the plot image,
@@ -173,6 +173,10 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
     interpolated here because text-only fallback models (ollama) receive no
     input_files, while hosted models also get the file attached via
     `input_files`.
+
+    `important_programs` (Sigla values marked as important by the user) appends
+    a "PROGRAMAS DESTACADOS" section to tasks 7-9 so the model identifies the
+    highlighted programs in the plot and gives specific insights/tips about them.
     """
     _MAX_TEXT_CHARS = 3000
 
@@ -185,6 +189,23 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
             return ""
 
     plot_data_text = _read_text(input_files.get("plot_data"))
+
+    def _important_programs_section(important_programs):
+        """PT-BR prompt section listing the user-highlighted programs."""
+        if not important_programs:
+            return ""
+        programs = "\n".join(f"- {p}" for p in important_programs)
+        return (
+            "\n\nPROGRAMAS DESTACADOS (marcados como importantes pelo usuário):\n"
+            f"{programs}\n\n"
+            "Estes programas estão realçados no gráfico. Dê atenção especial a "
+            "eles: identifique-os na visualização e nos dados, compare o "
+            "desempenho de cada um com os demais programas e inclua insights, "
+            "observações e sugestões específicas baseadas nos dados de cada "
+            "programa destacado."
+        )
+
+    important_section = _important_programs_section(important_programs)
 
     (
         data_reader,
@@ -290,6 +311,7 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         task7_desc = task7_config["description"].replace(
             "{plot_data}", plot_data_text or "(dados do CSV fornecidos acima)"
         )
+        task7_desc += important_section
         if image_description:
             task7_desc += (
                 "\n\nOBSERVAÇÃO: a imagem não está anexada (modelo local sem "
@@ -319,7 +341,7 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         # Task 8: Generate insights and narrative from analysis
         task8_config = load_task_prompt("task8_plot_insights")
         task8 = Task(
-            description=task8_config["description"],
+            description=task8_config["description"] + important_section,
             agent=plot_insights_generator,
             expected_output=task8_config["expected_output"],
             markdown=True,
@@ -332,7 +354,7 @@ def create_tasks(output_prefix, agents, input_files, image_description=""):
         # Task 9: Assess utility and importance of the plot
         task9_config = load_task_prompt("task9_plot_utility_importance")
         task9 = Task(
-            description=task9_config["description"],
+            description=task9_config["description"] + important_section,
             agent=utility_assessor,
             expected_output=task9_config["expected_output"],
             markdown=True,
@@ -354,6 +376,7 @@ def run_apoema_pipeline(
     png_path=None,
     csv_path=None,
     model="gemini",
+    important_programs=None,
 ):
     """
     Execute the APOEMA assessment analysis pipeline.
@@ -365,6 +388,8 @@ def run_apoema_pipeline(
         png_path: Path to optional PNG plot image file
         csv_path: Path to optional CSV data file
         model: Model to use - 'gemini' or 'ollama' (default: 'gemini')
+        important_programs: Program identifiers (Sigla values from the plot CSV)
+            marked as important by the user; tasks 7-9 give them special focus
 
     Returns:
         result: The result from crew.kickoff()
@@ -406,6 +431,7 @@ def run_apoema_pipeline(
         agents,
         input_files=input_files,
         image_description=image_description,
+        important_programs=important_programs,
     )
 
     crew = Crew(

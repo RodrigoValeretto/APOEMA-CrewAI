@@ -53,6 +53,7 @@ class ApoemaFlow(Flow):
         csv_path=None,
         output_prefix="output",
         model="gemini",
+        important_programs=None,
         analysis_id=None,
         on_task_complete=None,
         fresh=False,
@@ -66,6 +67,7 @@ class ApoemaFlow(Flow):
         self.state["csv_path"] = csv_path
         self.state["output_prefix"] = output_prefix
         self.state["model"] = model
+        self.state["important_programs"] = important_programs
         self.state["analysis_id"] = analysis_id
         self.state["fresh"] = fresh
 
@@ -115,6 +117,7 @@ class ApoemaFlow(Flow):
             agents,
             input_files=input_files,
             image_description=image_description,
+            important_programs=important_programs,
         )
         self.state["tasks"] = tasks
         self.state["llm"] = llm
@@ -365,6 +368,7 @@ def run_apoema_flow(
     png_path=None,
     csv_path=None,
     model="gemini",
+    important_programs=None,
     analysis_id=None,
     on_task_complete=None,
     fresh=False,
@@ -379,6 +383,8 @@ def run_apoema_flow(
         png_path: Path to optional PNG plot image file
         csv_path: Path to optional CSV data file
         model: Model to use - 'gemini' or 'ollama' (default: 'gemini')
+        important_programs: Program identifiers (Sigla values from the plot CSV)
+            marked as important by the user; tasks 7-9 give them special focus
         analysis_id: Optional ID of analysis for tracking
         on_task_complete: Optional callback function(task_name, result) for each completed task
         fresh: If True, ignore any checkpoint for this prefix and re-run all tasks
@@ -393,6 +399,7 @@ def run_apoema_flow(
         csv_path=csv_path,
         output_prefix=output_prefix,
         model=model,
+        important_programs=important_programs,
         analysis_id=analysis_id,
         on_task_complete=on_task_complete,
         fresh=fresh,

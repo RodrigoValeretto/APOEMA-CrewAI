@@ -60,6 +60,7 @@ def enqueue_analysis_for_sequential_processing(
     csv_file: str = None,
     output_prefix: str = None,
     model: str = "ollama",
+    important_programs: list = None,
 ) -> dict:
     """
     Intermediate task that manages sequential processing of analyses.
@@ -80,6 +81,8 @@ def enqueue_analysis_for_sequential_processing(
         csv_file: Path to CSV data file (optional)
         output_prefix: Prefix for output files
         model: Model to use (gemini, ollama)
+        important_programs: Programs marked as important by the user (Sigla
+            values from the plot CSV)
 
     Returns:
         Dictionary with queue status or result of actual processing
@@ -119,6 +122,7 @@ def enqueue_analysis_for_sequential_processing(
                     "csv_file": csv_file,
                     "output_prefix": output_prefix,
                     "model": model,
+                    "important_programs": important_programs,
                 },
                 delay=2000,  # 2 second delay before retry (Dramatiq will add exponential backoff)
             )
@@ -138,6 +142,7 @@ def enqueue_analysis_for_sequential_processing(
             csv_file=csv_file,
             output_prefix=output_prefix,
             model=model,
+            important_programs=important_programs,
         )
 
         return {
@@ -159,6 +164,7 @@ def enqueue_analysis_for_sequential_processing(
             csv_file=csv_file,
             output_prefix=output_prefix,
             model=model,
+            important_programs=important_programs,
         )
         return {
             "analysis_id": analysis_id,
@@ -182,6 +188,7 @@ def run_analysis_flow_with_tracking(
     csv_file: str = None,
     output_prefix: str = None,
     model: str = "ollama",
+    important_programs: list = None,
 ) -> dict:
     """
     Async task to run APOEMA Flow analysis with database tracking.
@@ -202,6 +209,8 @@ def run_analysis_flow_with_tracking(
         csv_file: Path to CSV data file (optional)
         output_prefix: Prefix for output files
         model: Model to use (gemini, ollama)
+        important_programs: Programs marked as important by the user (Sigla
+            values from the plot CSV)
 
     Returns:
         Dictionary with analysis info
@@ -235,6 +244,7 @@ def run_analysis_flow_with_tracking(
             png_path=png_file,
             csv_path=csv_file,
             model=model,
+            important_programs=important_programs,
             analysis_id=analysis_id,
             on_task_complete=on_task_complete,
         )

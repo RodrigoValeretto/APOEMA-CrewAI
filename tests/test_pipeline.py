@@ -90,6 +90,34 @@ def test_create_tasks_png_csv_workflow():
     assert all((t.tools or []) == [] for t in tasks)
 
 
+def test_create_tasks_injects_important_programs():
+    """Important programs must be appended to tasks 7-9 descriptions."""
+    from apoema_agent import get_llm, create_agents, create_tasks
+    from crewai_files import TextFile, ImageFile
+
+    agents = create_agents(get_llm(model="gemini"))
+    input_files = {
+        "assessment_data": TextFile(source="input/cc_assessment_data.json"),
+        "plot_image": ImageFile(source="input/formacao-docentes.png"),
+        "plot_data": TextFile(source="input/formacao-docentes.csv"),
+    }
+    tasks = create_tasks(
+        "test_output",
+        agents,
+        input_files=input_files,
+        important_programs=["UFPA-A-5-CC", "UFBA"],
+    )
+    assert len(tasks) == 5
+    for task in tasks[2:]:  # tasks 7, 8, 9
+        assert "PROGRAMAS DESTACADOS" in task.description
+        assert "UFPA-A-5-CC" in task.description
+
+    # Without important programs, no section is appended
+    plain = create_tasks("test_output", agents, input_files=input_files)
+    for task in plain[2:]:
+        assert "PROGRAMAS DESTACADOS" not in task.description
+
+
 # ─── Image description helper ──────────────────────────────────────
 
 

@@ -265,6 +265,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             analysis_type=workflow_type,
             status=AnalysisStatus.PENDING.value,
             model=request.model,
+            important_programs=request.important_programs,
         )
 
         # Collect all file IDs for mapping (both downloaded and passed as reference)
@@ -300,6 +301,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             csv_file=csv_path,
             output_prefix=f"analysis_{analysis_id}",
             model=request.model,
+            important_programs=request.important_programs,
         )
 
         return AnalysisResponse(
@@ -307,6 +309,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             type=workflow_type,
             status=AnalysisStatus.PENDING.value,
             created_at=datetime.now(),
+            important_programs=request.important_programs,
         )
 
     except ApoemaException:
@@ -361,6 +364,7 @@ async def retry_analysis_endpoint(analysis_id: int):
 
         model = analysis.get("model") or os.getenv("DEFAULT_MODEL") or DEFAULT_MODEL
         validate_model_choice(model)
+        important_programs = analysis.get("important_programs") or []
 
         # Re-enqueue with the SAME output_prefix so the checkpoint is resumed
         enqueue_analysis_for_sequential_processing.send(
@@ -371,6 +375,7 @@ async def retry_analysis_endpoint(analysis_id: int):
             csv_file=paths.get(FileType.CSV.value) or "",
             output_prefix=f"analysis_{analysis_id}",
             model=model,
+            important_programs=important_programs,
         )
         database.update_analysis_status(analysis_id, AnalysisStatus.PROCESSING.value)
 
@@ -441,6 +446,7 @@ async def get_analysis_endpoint(analysis_id: int):
             status=analysis["status"],
             created_at=analysis["created_at"],
             updated_at=analysis["updated_at"],
+            important_programs=analysis.get("important_programs") or None,
             results=task_results,
             progress=progress,
         )
@@ -492,6 +498,7 @@ async def list_analyses_endpoint(
                 "status": a["status"],
                 "created_at": a["created_at"],
                 "results_count": a.get("results_count", 0),
+                "important_programs": a.get("important_programs") or None,
             }
             for a in analyses
         ]

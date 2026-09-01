@@ -31,6 +31,7 @@ def create_analysis(
     analysis_type: str,
     status: str = AnalysisStatus.PENDING.value,
     model: Optional[str] = None,
+    important_programs: Optional[List[str]] = None,
 ) -> int:
     """
     Create a new analysis record
@@ -39,6 +40,8 @@ def create_analysis(
         analysis_type: Type of analysis (pdf, png_csv, basic)
         status: Initial status (default: pending)
         model: LLM model used for the analysis (stored for retry support)
+        important_programs: Program identifiers marked as important by the user
+            (Sigla values from the plot CSV); stored for retry support
 
     Returns:
         analysis_id
@@ -51,11 +54,18 @@ def create_analysis(
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO analysis (type, status, model, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO analysis (type, status, model, important_programs, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (analysis_type, status, model, datetime.now(), datetime.now()),
+                    (
+                        analysis_type,
+                        status,
+                        model,
+                        important_programs,
+                        datetime.now(),
+                        datetime.now(),
+                    ),
                 )
                 analysis_id = cur.fetchone()[0]
                 conn.commit()
@@ -83,7 +93,7 @@ def get_analysis(analysis_id: int) -> Dict[str, Any]:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     """
-                    SELECT id, type, status, model, created_at, updated_at
+                    SELECT id, type, status, model, important_programs, created_at, updated_at
                     FROM analysis
                     WHERE id = %s
                     """,
@@ -147,7 +157,7 @@ def get_all_analyses(
                 # Get paginated results
                 query = f"""
                     SELECT
-                        id, type, status, created_at, updated_at,
+                        id, type, status, created_at, updated_at, important_programs,
                         (SELECT COUNT(*) FROM analysis_results WHERE analysis_id = analysis.id) as results_count
                     FROM analysis
                     {where_clause}
