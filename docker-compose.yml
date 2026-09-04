@@ -134,6 +134,44 @@ services:
     # Increase stop timeout to allow graceful shutdown of long-running tasks
     stop_grace_period: 120s
 
+  # Worker de conversão de documentos (informativo PDF/XLSX -> JSON via docling).
+  # Fila dedicada 'conversion': a conversão nunca bloqueia a fila FIFO de análises
+  # e o docling (torch) só é carregado aqui, mantendo os workers de análise leves.
+  converter_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apoema-converter-worker
+    # Módulo (broker) ANTES das opções: no CLI 1.18 `-Q` tem nargs='*' e
+    # engoliria o nome do módulo se viesse depois.
+    command: dramatiq conversion_tasks -Q conversion --processes 1 --verbose
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-apoema}
+      DB_PASSWORD: ${DB_PASSWORD:-apoema_dev_password}
+      DB_NAME: ${DB_NAME:-apoema_db}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
+      DRAMATIQ_BROKER_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
+      PYTHONUNBUFFERED: 1
+      # Cache dos modelos docling (layout/table) entre execuções
+      HF_HOME: /root/.cache/huggingface
+      HF_HUB_DISABLE_TELEMETRY: 1
+      CONVERTER_OCR: ${CONVERTER_OCR:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      flyway:
+        condition: service_completed_successfully
+    volumes:
+      - ./:/app
+      - hf_cache:/root/.cache/huggingface
+    networks:
+      - apoema_network
+    stop_grace_period: 60s
+
   # FastAPI application (API server)
   app:
     build:
@@ -184,6 +222,7 @@ volumes:
   postgres_data:
   rabbitmq_data:
   ollama_data:
+  hf_cache:
 
 networks:
   apoema_network:
