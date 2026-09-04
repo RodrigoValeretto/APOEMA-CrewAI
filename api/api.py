@@ -8,6 +8,7 @@ from fastapi import (
     Query,
     File,
     UploadFile,
+    Form,
     status,
 )
 from fastapi.responses import FileResponse, JSONResponse
@@ -39,6 +40,11 @@ from .models import (
     TaskResult,
     ProgressInfo,
     FileDownloadRequest,
+    InformativoCreate,
+    InformativoResponse,
+    InformativoListResponse,
+    InformativoDocumentResponse,
+    InformativoDocumentListResponse,
 )
 from .constants import (
     AnalysisType,
@@ -47,6 +53,10 @@ from .constants import (
     ErrorCode,
     EXPECTED_TASKS,
     DEFAULT_MODEL,
+    DocumentKind,
+    ConversionStatus,
+    KIND_ALLOWED_EXTENSIONS,
+    CONVERTED_EXTRA_FILE_TYPE,
 )
 from .exceptions import (
     ApoemaException,
@@ -54,18 +64,23 @@ from .exceptions import (
     InvalidAnalysisInput,
     InvalidAnalysisState,
     InvalidURL,
+    InvalidFileType,
     DatabaseError,
+    InformativoNotFound,
+    InformativoDocumentNotFound,
 )
 from .validators import (
     validate_analysis_request,
     determine_workflow_type,
     validate_model_choice,
+    slugify,
 )
 from .middleware import setup_middleware
 from . import database, file_manager
 from tasks import (
     enqueue_analysis_for_sequential_processing,
 )
+from conversion_tasks import convert_informativo_document
 
 
 config = get_config()
@@ -79,6 +94,51 @@ app = FastAPI(
 
 # Wire CORS, request logging, and generic exception handlers
 setup_middleware(app)
+
+
+def _documento_response(doc: dict) -> InformativoDocumentResponse:
+    """Build an InformativoDocumentResponse from a joined DB row."""
+    return InformativoDocumentResponse(
+        id=doc["id"],
+        informativo_id=doc["informativo_id"],
+        kind=doc["kind"],
+        status=doc["status"],
+        error=doc.get("error"),
+        original_file_id=doc.get("original_file_id"),
+        original_file_name=doc.get("original_file_name"),
+        original_file_size=doc.get("original_file_size"),
+        converted_file_id=doc.get("converted_file_id"),
+        converted_file_name=doc.get("converted_file_name"),
+        converted_file_size=doc.get("converted_file_size"),
+        created_at=doc["created_at"],
+        updated_at=doc.get("updated_at"),
+    )
+
+
+def _resolve_informativo_inputs(informativo_id: int):
+    """Resolve an informativo into analysis inputs.
+
+    Returns:
+        (assessment_file, assessment_file_id, knowledge_files, mappings):
+        the latest converted ficha becomes the assessment source and every
+        completed anexo/adendo becomes an extra Knowledge file (retrieval).
+    """
+    informativo = database.get_informativo(informativo_id)  # 404 if missing
+    fichas = database.get_completed_documents_by_kinds(
+        informativo_id, [DocumentKind.FICHA.value]
+    )
+    if not fichas:
+        raise InvalidAnalysisInput(
+            f"Informativo '{informativo['nome']}' has no converted ficha (completed). "
+            "Upload the ficha PDF and wait for the conversion job to finish."
+        )
+    ficha = fichas[-1]  # latest converted ficha
+    extras = database.get_completed_documents_by_kinds(
+        informativo_id, [DocumentKind.ANEXO.value, DocumentKind.ADENDO.value]
+    )
+    knowledge_files = [d["converted_file_path"] for d in extras]
+    mappings = [(d["converted_file_id"], CONVERTED_EXTRA_FILE_TYPE) for d in extras]
+    return ficha["converted_file_path"], ficha["converted_file_id"], knowledge_files, mappings
 
 
 # Exception handlers
@@ -242,6 +302,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             csv_file_id=request.csv_file_id,
             csv_url=request.csv_url,
             model=request.model,
+            informativo_id=request.informativo_id,
         )
         if not is_valid:
             raise InvalidAnalysisInput(error_msg)
@@ -249,9 +310,20 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         # Validate model
         validate_model_choice(request.model)
 
+        # Resolve informativo (if provided): converted ficha = assessment,
+        # converted anexos/adendos = extra Knowledge files.
+        knowledge_files = []
+        informativo_mappings = []
+        converted_ficha_id = None
+        if request.informativo_id:
+            assessment_file, converted_ficha_id, knowledge_files, informativo_mappings = (
+                _resolve_informativo_inputs(request.informativo_id)
+            )
+
         # Resolve file sources (download from URLs, resolve IDs to paths)
         resolved_files = await resolve_file_sources(request)
-        assessment_file = resolved_files['assessment_file']
+        if not request.informativo_id:
+            assessment_file = resolved_files['assessment_file']
         pdf_path = resolved_files['pdf_path']
         png_path = resolved_files['png_path']
         csv_path = resolved_files['csv_path']
@@ -270,10 +342,17 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             status=AnalysisStatus.PENDING.value,
             model=request.model,
             important_programs=request.important_programs,
+            informativo_id=request.informativo_id,
         )
 
         # Collect all file IDs for mapping (both downloaded and passed as reference)
         all_file_mappings = list(downloaded_file_ids)  # Downloaded files
+
+        # Informativo-sourced files: the converted ficha (assessment) and every
+        # converted anexo/adendo (knowledge extras) mapped for retry support.
+        if request.informativo_id and converted_ficha_id:
+            all_file_mappings.append((converted_ficha_id, FileType.ASSESSMENT.value))
+            all_file_mappings.extend(informativo_mappings)
 
         # Add file IDs that were passed as references (not downloaded)
         if request.assessment_file_id and not any(ftype == FileType.ASSESSMENT.value for _, ftype in downloaded_file_ids):
@@ -306,6 +385,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             output_prefix=f"analysis_{analysis_id}",
             model=request.model,
             important_programs=request.important_programs,
+            knowledge_files=knowledge_files,
         )
 
         return AnalysisResponse(
@@ -314,6 +394,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             status=AnalysisStatus.PENDING.value,
             created_at=datetime.now(),
             important_programs=request.important_programs,
+            informativo_id=request.informativo_id,
         )
 
     except ApoemaException:
@@ -345,9 +426,17 @@ async def retry_analysis_endpoint(analysis_id: int):
                 f"Only failed analyses can be retried (current status: {analysis['status']})"
             )
 
-        # Rebuild the original input file paths from the stored mappings
+        # Rebuild the original input file paths from the stored mappings.
+        # NOTE: converted anexos/adendos share file_type 'anexo', so collect
+        # them as a list instead of a single-path dict.
         files = database.get_analysis_files(analysis_id)
-        paths = {f["file_type"]: f["file_path"] for f in files}
+        paths = {}
+        knowledge_files = []
+        for f in files:
+            if f["file_type"] == CONVERTED_EXTRA_FILE_TYPE:
+                knowledge_files.append(f["file_path"])
+            elif f["file_type"] not in paths:
+                paths[f["file_type"]] = f["file_path"]
         assessment_file = paths.get(FileType.ASSESSMENT.value)
         if not assessment_file:
             raise InvalidAnalysisInput(
@@ -364,6 +453,11 @@ async def retry_analysis_endpoint(analysis_id: int):
             if path and not os.path.exists(path):
                 raise InvalidAnalysisInput(
                     f"Input file for '{label}' no longer exists: {path}"
+                )
+        for kf in knowledge_files:
+            if not os.path.exists(kf):
+                raise InvalidAnalysisInput(
+                    f"Knowledge file no longer exists: {kf}"
                 )
 
         model = analysis.get("model") or os.getenv("DEFAULT_MODEL") or DEFAULT_MODEL
@@ -384,6 +478,7 @@ async def retry_analysis_endpoint(analysis_id: int):
             output_prefix=f"analysis_{analysis_id}",
             model=model,
             important_programs=important_programs,
+            knowledge_files=knowledge_files,
         )
 
         return AnalysisResponse(
@@ -391,6 +486,8 @@ async def retry_analysis_endpoint(analysis_id: int):
             type=analysis["type"],
             status=AnalysisStatus.PROCESSING.value,
             created_at=analysis["created_at"],
+            important_programs=important_programs,
+            informativo_id=analysis.get("informativo_id"),
         )
 
     except ApoemaException:
@@ -454,6 +551,7 @@ async def get_analysis_endpoint(analysis_id: int):
             created_at=analysis["created_at"],
             updated_at=analysis["updated_at"],
             important_programs=analysis.get("important_programs") or None,
+            informativo_id=analysis.get("informativo_id"),
             results=task_results,
             progress=progress,
         )
@@ -902,6 +1000,237 @@ async def root():
     """Redirect to API documentation"""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/docs")
+
+
+# ---------------------------------------------------------------------------
+# Informativos (CAPES area corpus) — document upload + PDF/XLSX -> JSON
+# ---------------------------------------------------------------------------
+@app.get(
+    "/api/informativos",
+    response_model=InformativoListResponse,
+    tags=["Informativos"],
+)
+async def list_informativos_endpoint():
+    """List informativos (CAPES area corpora) with document counts."""
+    try:
+        rows = database.list_informativos()
+        items = [
+            InformativoResponse(
+                id=r["id"],
+                nome=r["nome"],
+                slug=r["slug"],
+                quadrienio=r.get("quadrienio"),
+                created_at=r["created_at"],
+                total_documents=r.get("total_documents", 0),
+                completed_documents=r.get("completed_documents", 0),
+            )
+            for r in rows
+        ]
+        return InformativoListResponse(total=len(items), items=items)
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/informativos",
+    response_model=InformativoResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Informativos"],
+)
+async def create_informativo_endpoint(request: InformativoCreate):
+    """Create an informativo (e.g. 'Ciência da Computação')."""
+    try:
+        slug = slugify(request.nome)
+        existing = [i for i in database.list_informativos() if i["slug"] == slug]
+        if existing:
+            raise InvalidAnalysisInput(
+                f"Informativo '{request.nome}' already exists (id {existing[0]['id']})"
+            )
+        informativo_id = database.create_informativo(
+            nome=request.nome, slug=slug, quadrienio=request.quadrienio
+        )
+        informativo = database.get_informativo(informativo_id)
+        return InformativoResponse(
+            id=informativo["id"],
+            nome=informativo["nome"],
+            slug=informativo["slug"],
+            quadrienio=informativo.get("quadrienio"),
+            created_at=informativo["created_at"],
+            total_documents=0,
+            completed_documents=0,
+        )
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.get(
+    "/api/informativos/{informativo_id}",
+    response_model=InformativoResponse,
+    tags=["Informativos"],
+)
+async def get_informativo_endpoint(informativo_id: int):
+    """Get an informativo with its document counts."""
+    try:
+        informativo = database.get_informativo(informativo_id)  # 404 if missing
+        docs = database.list_informativo_documents(informativo_id)
+        return InformativoResponse(
+            id=informativo["id"],
+            nome=informativo["nome"],
+            slug=informativo["slug"],
+            quadrienio=informativo.get("quadrienio"),
+            created_at=informativo["created_at"],
+            total_documents=len(docs),
+            completed_documents=sum(1 for d in docs if d["status"] == ConversionStatus.COMPLETED.value),
+        )
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/informativos/{informativo_id}/documentos",
+    response_model=InformativoDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Informativos"],
+)
+async def upload_informativo_document(
+    informativo_id: int,
+    file: UploadFile = File(...),
+    kind: str = Form(...),
+):
+    """Upload a ficha (PDF) or anexo/adendo (PDF/XLSX) into an informativo.
+
+    The upload is saved and a Dramatiq conversion job is enqueued on the
+    'conversion' queue; poll GET /api/informativos/{id}/documentos for status.
+    """
+    try:
+        _ = database.get_informativo(informativo_id)  # 404 if missing
+
+        if kind not in (DocumentKind.FICHA.value, DocumentKind.ANEXO.value, DocumentKind.ADENDO.value):
+            raise InvalidAnalysisInput(
+                f"kind must be one of: ficha, anexo, adendo (got '{kind}')"
+            )
+
+        from pathlib import Path as _Path
+
+        file_ext = _Path(file.filename or "").suffix.lower()
+        allowed = KIND_ALLOWED_EXTENSIONS.get(kind, [])
+        if file_ext not in allowed:
+            raise InvalidFileType(file_ext, allowed)
+
+        file_type = FileType.XLSX if file_ext == ".xlsx" else FileType.PDF
+        file_id, _ = await file_manager.save_uploaded_file(file, file_type)
+
+        document_id = database.create_informativo_document(
+            informativo_id=informativo_id,
+            kind=kind,
+            original_file_id=file_id,
+        )
+        # Fire-and-forget conversion job (dedicated 'conversion' queue).
+        convert_informativo_document.send(document_id=document_id)
+
+        doc = database.get_informativo_document(document_id)
+        return _documento_response(doc)
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.get(
+    "/api/informativos/{informativo_id}/documentos",
+    response_model=InformativoDocumentListResponse,
+    tags=["Informativos"],
+)
+async def list_informativo_documents_endpoint(informativo_id: int):
+    """List the documents of an informativo (with conversion status)."""
+    try:
+        _ = database.get_informativo(informativo_id)  # 404 if missing
+        docs = database.list_informativo_documents(informativo_id)
+        return InformativoDocumentListResponse(
+            informativo_id=informativo_id,
+            items=[_documento_response(d) for d in docs],
+        )
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.get(
+    "/api/informativos/{informativo_id}/documentos/{document_id}",
+    response_model=InformativoDocumentResponse,
+    tags=["Informativos"],
+)
+async def get_informativo_document_endpoint(informativo_id: int, document_id: int):
+    """Get one informativo document (conversion status + converted file info)."""
+    try:
+        doc = database.get_informativo_document(document_id)
+        if doc["informativo_id"] != informativo_id:
+            raise InformativoDocumentNotFound(document_id)
+        return _documento_response(doc)
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.get(
+    "/api/informativos/{informativo_id}/documentos/{document_id}/conteudo",
+    tags=["Informativos"],
+)
+async def get_informativo_document_content(informativo_id: int, document_id: int):
+    """Download the converted JSON of an informativo document."""
+    try:
+        doc = database.get_informativo_document(document_id)
+        if doc["informativo_id"] != informativo_id:
+            raise InformativoDocumentNotFound(document_id)
+        if doc["status"] != ConversionStatus.COMPLETED.value:
+            raise InvalidAnalysisState(
+                f"Document not converted yet (status: {doc['status']})"
+            )
+        converted_path = doc.get("converted_file_path")
+        if not converted_path or not os.path.exists(converted_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Converted JSON file missing for document {document_id}",
+            )
+        filename = doc.get("converted_file_name") or f"doc_{document_id}.json"
+        return FileResponse(
+            converted_path,
+            media_type="application/json",
+            filename=filename,
+        )
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
 
 
 # Exception handlers setup happens automatically when app is defined
