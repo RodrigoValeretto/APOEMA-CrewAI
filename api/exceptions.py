@@ -163,3 +163,25 @@ class URLFetchError(ApoemaException):
             error_code=ErrorCode.URL_FETCH_ERROR,
             status_code=status.HTTP_400_BAD_REQUEST,
         )
+
+
+class InformativoNotFound(ApoemaException):
+    """Informativo (CAPES area document corpus) with given ID not found"""
+
+    def __init__(self, informativo_id: int):
+        super().__init__(
+            detail=f"Informativo with ID {informativo_id} not found",
+            error_code=ErrorCode.INFORMATIVO_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class InformativoDocumentNotFound(ApoemaException):
+    """Informativo document with given ID not found"""
+
+    def __init__(self, document_id: int):
+        super().__init__(
+            detail=f"Informativo document with ID {document_id} not found",
+            error_code=ErrorCode.DOCUMENT_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND,
+        )

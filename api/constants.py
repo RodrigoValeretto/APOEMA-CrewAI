@@ -31,6 +31,27 @@ class FileType(str, Enum):
     PDF = "pdf"
     PNG = "png"
     CSV = "csv"
+    XLSX = "xlsx"
+
+
+class DocumentKind(str, Enum):
+    """Kinds of documents inside an informativo (CAPES area corpus)"""
+    FICHA = "ficha"
+    ANEXO = "anexo"
+    ADENDO = "adendo"
+
+
+class ConversionStatus(str, Enum):
+    """Status of a document -> JSON conversion job"""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+# File types used for converted JSON artifacts registered in analysis_files
+CONVERTED_FICHA_FILE_TYPE = FileType.ASSESSMENT.value  # drop-in assessment source
+CONVERTED_EXTRA_FILE_TYPE = "anexo"  # anexos/adendos converted to JSON
 
 
 class TaskName(str, Enum):
@@ -61,6 +82,8 @@ class ErrorCode(str, Enum):
     INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
     INVALID_URL = "INVALID_URL"
     URL_FETCH_ERROR = "URL_FETCH_ERROR"
+    INFORMATIVO_NOT_FOUND = "INFORMATIVO_NOT_FOUND"
+    DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND"
 
 
 # Configuration constants
@@ -72,6 +95,14 @@ ALLOWED_FILE_EXTENSIONS = {
     FileType.PDF.value: [".pdf"],
     FileType.PNG.value: [".png"],
     FileType.CSV.value: [".csv"],
+    FileType.XLSX.value: [".xlsx"],
+}
+
+# Source extensions accepted per informativo document kind
+KIND_ALLOWED_EXTENSIONS = {
+    DocumentKind.FICHA.value: [".pdf"],
+    DocumentKind.ANEXO.value: [".pdf", ".xlsx"],
+    DocumentKind.ADENDO.value: [".pdf", ".xlsx"],
 }
 
 TASK_TIMEOUT_MINUTES = 60

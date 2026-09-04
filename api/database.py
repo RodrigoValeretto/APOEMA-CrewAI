@@ -6,7 +6,12 @@ from typing import List, Optional, Dict, Any
 import psycopg
 from psycopg.rows import dict_row
 from config import get_config
-from .exceptions import DatabaseError, AnalysisNotFound
+from .exceptions import (
+    DatabaseError,
+    AnalysisNotFound,
+    InformativoNotFound,
+    InformativoDocumentNotFound,
+)
 from .constants import AnalysisStatus
 
 
@@ -32,6 +37,7 @@ def create_analysis(
     status: str = AnalysisStatus.PENDING.value,
     model: Optional[str] = None,
     important_programs: Optional[List[str]] = None,
+    informativo_id: Optional[int] = None,
 ) -> int:
     """
     Create a new analysis record
@@ -54,8 +60,8 @@ def create_analysis(
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO analysis (type, status, model, important_programs, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO analysis (type, status, model, important_programs, informativo_id, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
                     (
@@ -63,6 +69,7 @@ def create_analysis(
                         status,
                         model,
                         important_programs,
+                        informativo_id,
                         datetime.now(),
                         datetime.now(),
                     ),
@@ -93,7 +100,7 @@ def get_analysis(analysis_id: int) -> Dict[str, Any]:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     """
-                    SELECT id, type, status, model, important_programs, created_at, updated_at
+                    SELECT id, type, status, model, important_programs, informativo_id, created_at, updated_at
                     FROM analysis
                     WHERE id = %s
                     """,
@@ -678,3 +685,218 @@ def count_older_pending_analyses(analysis_id: int) -> int:
                 return count
     except psycopg.Error as e:
         raise DatabaseError(f"Failed to count older pending analyses: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Informativos (CAPES area document corpus) + conversion documents
+# ---------------------------------------------------------------------------
+
+_DOC_SELECT = """
+    SELECT d.id, d.informativo_id, d.kind, d.status, d.error,
+           d.original_file_id, d.converted_file_id,
+           d.created_at, d.updated_at,
+           fo.file_name AS original_file_name, fo.file_path AS original_file_path,
+           fo.file_size AS original_file_size,
+           fc.file_name AS converted_file_name, fc.file_path AS converted_file_path,
+           fc.file_size AS converted_file_size
+    FROM informativo_documents d
+    LEFT JOIN analysis_files fo ON fo.id = d.original_file_id
+    LEFT JOIN analysis_files fc ON fc.id = d.converted_file_id
+"""
+
+
+def create_informativo(nome: str, slug: str, quadrienio: Optional[str] = None) -> int:
+    """Create an informativo (CAPES area corpus). Raises DatabaseError if slug exists."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO informativos (nome, slug, quadrienio, created_at)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (nome, slug, quadrienio, datetime.now()),
+                )
+                row = cur.fetchone()
+                informativo_id = row[0] if row else None
+                conn.commit()
+                return informativo_id
+    except psycopg.errors.UniqueViolation:
+        raise DatabaseError(f"Informativo with slug '{slug}' already exists")
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to create informativo: {str(e)}")
+
+
+def get_informativo(informativo_id: int) -> Dict[str, Any]:
+    """Get an informativo row (raises InformativoNotFound)."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT id, nome, slug, quadrienio, created_at
+                    FROM informativos WHERE id = %s
+                    """,
+                    (informativo_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise InformativoNotFound(informativo_id)
+                return dict(row)
+    except InformativoNotFound:
+        raise
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get informativo: {str(e)}")
+
+
+def list_informativos() -> List[Dict[str, Any]]:
+    """List all informativos (newest first) with document counts."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT i.id, i.nome, i.slug, i.quadrienio, i.created_at,
+                           COUNT(d.id) AS total_documents,
+                           COUNT(d.id) FILTER (WHERE d.status = 'completed') AS completed_documents
+                    FROM informativos i
+                    LEFT JOIN informativo_documents d ON d.informativo_id = i.id
+                    GROUP BY i.id
+                    ORDER BY i.id DESC
+                    """
+                )
+                return [dict(r) for r in cur.fetchall()]
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to list informativos: {str(e)}")
+
+
+def create_informativo_document(
+    informativo_id: int, kind: str, original_file_id: int
+) -> int:
+    """Register a document upload inside an informativo (status: pending)."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO informativo_documents
+                        (informativo_id, kind, status, original_file_id, created_at, updated_at)
+                    VALUES (%s, %s, 'pending', %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (informativo_id, kind, original_file_id, datetime.now(), datetime.now()),
+                )
+                row = cur.fetchone()
+                doc_id = row[0] if row else None
+                conn.commit()
+                return doc_id
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to create informativo document: {str(e)}")
+
+
+def get_informativo_document(document_id: int) -> Dict[str, Any]:
+    """Get a document row joined with source/converted file info."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(_DOC_SELECT + " WHERE d.id = %s", (document_id,))
+                row = cur.fetchone()
+                if not row:
+                    raise InformativoDocumentNotFound(document_id)
+                return dict(row)
+    except InformativoDocumentNotFound:
+        raise
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get informativo document: {str(e)}")
+
+
+def list_informativo_documents(informativo_id: int) -> List[Dict[str, Any]]:
+    """List documents of an informativo (oldest first)."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    _DOC_SELECT + " WHERE d.informativo_id = %s ORDER BY d.id",
+                    (informativo_id,),
+                )
+                return [dict(r) for r in cur.fetchall()]
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to list informativo documents: {str(e)}")
+
+
+def claim_informativo_document(document_id: int) -> bool:
+    """Atomically claim a pending document for conversion (pending -> processing).
+
+    Returns True if this caller won the claim; False if the document is already
+    being processed or was already converted/failed. A document stuck in
+    'processing' for over 30 minutes (crashed worker mid-conversion) can be
+    reclaimed — mirrors the analysis zombie-recovery lesson.
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE informativo_documents
+                    SET status = 'processing', updated_at = %s
+                    WHERE id = %s
+                      AND (
+                        status = 'pending'
+                        OR (status = 'processing'
+                            AND updated_at < %s - INTERVAL '30 minutes')
+                      )
+                    """,
+                    (datetime.now(), document_id, datetime.now()),
+                )
+                claimed = cur.rowcount > 0
+                conn.commit()
+                return claimed
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to claim informativo document: {str(e)}")
+
+
+def update_informativo_document_status(
+    document_id: int,
+    status: str,
+    converted_file_id: Optional[int] = None,
+    error: Optional[str] = None,
+) -> None:
+    """Update document conversion status (completed/failed + artifacts)."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE informativo_documents
+                    SET status = %s, converted_file_id = %s, error = %s, updated_at = %s
+                    WHERE id = %s
+                    """,
+                    (status, converted_file_id, error, datetime.now(), document_id),
+                )
+                conn.commit()
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to update informativo document status: {str(e)}")
+
+
+def get_completed_documents_by_kinds(
+    informativo_id: int, kinds: List[str]
+) -> List[Dict[str, Any]]:
+    """Completed converted documents of the given kinds (for analysis input)."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    _DOC_SELECT
+                    + """
+                      WHERE d.informativo_id = %s
+                        AND d.kind = ANY(%s)
+                        AND d.status = 'completed'
+                        AND d.converted_file_id IS NOT NULL
+                      ORDER BY d.id
+                      """,
+                    (informativo_id, list(kinds)),
+                )
+                return [dict(r) for r in cur.fetchall()]
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get informativo converted documents: {str(e)}")
