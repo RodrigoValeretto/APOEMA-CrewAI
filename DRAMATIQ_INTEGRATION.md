@@ -30,6 +30,24 @@ Este guia descreve como integrar Dramatiq com o APOEMA para executar análises d
 └─────────────────┘
 ```
 
+### Duas filas e dois workers
+
+| Worker | Comando (compose) | Fila | Responsabilidade |
+|---|---|---|---|
+| `dramatiq_worker` (10 processos) | `dramatiq --verbose tasks` | `default` | Enfileiramento FIFO + execução do CrewAI (análises) |
+| `converter_worker` (1 processo) | `dramatiq conversion_tasks -Q conversion --processes 1 --verbose` | `conversion` | Conversão docling de documentos de informativo (PDF/XLSX → JSON) |
+
+- O broker (RabbitMQ) é configurado uma única vez em **`dramatiq_broker.py`**
+  (`set_broker`), importado por `tasks.py` e `conversion_tasks.py` antes dos
+  decorators `@dramatiq.actor` (exigência do Dramatiq).
+- No CLI do Dramatiq **1.18 o módulo é o positional `broker`** (o módulo precisa
+  expor um atributo `broker`) e `-Q` tem `nargs='*'` — por isso o comando do
+  `converter_worker` põe o **módulo ANTES das opções** (`conversion_tasks -Q conversion`),
+  senão o `-Q` "engole" o nome do módulo e o worker nem sobe.
+- A conversão nunca bloqueia a fila FIFO de análises: são filas independentes, e o
+  docling/torch só é carregado no processo que executa a conversão (import lazy em
+  `conversion/engine.py`).
+
 ## Fluxo de Análise
 
 ### 1. Submissão da Task

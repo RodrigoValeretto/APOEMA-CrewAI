@@ -208,6 +208,36 @@ uv add --dev package-name    # Development dependency
 uv sync --upgrade  # Update all packages
 ```
 
+## 📄 Document Conversion (Fichas CAPES → JSON, via API)
+
+Since the `json-converter` branch, fichas (PDF) and anexos/adendos (XLSX) can be
+uploaded through the API, converted to enriched JSON in the background (Dramatiq
+`conversion` queue + docling) and grouped under an **informativo** (area corpus).
+Analyses can then be triggered straight from the informativo:
+
+```bash
+# 1) Create the informativo once
+curl -X POST http://localhost:8000/api/informativos \
+  -H "Content-Type: application/json" \
+  -d '{"nome": "Ciência da Computação", "quadrienio": "2025-2028"}'
+
+# 2) Upload the ficha PDF (kind=ficha) and any xlsx anexos (kind=anexo|adendo)
+curl -X POST http://localhost:8000/api/informativos/1/documentos \
+  -F "file=@COMPUTACAO_FICHA_2025_2028.pdf" -F "kind=ficha"
+
+# 3) Wait until GET /api/informativos/1/documentos shows status "completed"
+#    (poll every ~10s; each PDF takes ~10-90s on the converter worker)
+
+# 4) Run the analysis from the informativo (ficha = assessment, anexos = Knowledge)
+curl -X POST http://localhost:8000/api/analysis \
+  -H "Content-Type: application/json" \
+  -d '{"informativo_id": 1, "model": "gemini"}'
+```
+
+The converted JSON is stored at `uploads/converted/doc_{id}.json` and registered
+in `analysis_files` (file_type `assessment` for fichas, `anexo` otherwise), so it
+can also be reused directly via `assessment_file_id`.
+
 ## 💻 Using Commands Without Makefile
 
 If you prefer to skip the Makefile, you can use uv directly:
