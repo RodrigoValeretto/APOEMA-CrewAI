@@ -37,12 +37,47 @@ dramatiq.set_broker(broker)
 # Now import the modules that use dramatiq
 from apoema_flow import run_apoema_flow
 from apoema_agent import run_apoema_pipeline
+from retry_utils import is_transient_error
 from db_manager import (
     update_analysis_status,
     save_analysis_result,
     count_processing_analyses,
     count_older_pending_analyses,
+    claim_analysis_processing_slot,
 )
+
+
+def _requeue_through_gate(
+    analysis_id: int,
+    assessment_file: str,
+    pdf_file,
+    png_file,
+    csv_file,
+    output_prefix,
+    model,
+    important_programs,
+    reason: str,
+) -> dict:
+    """Re-queue an analysis through the sequential-processing gate."""
+    logger.info(f"[Analysis {analysis_id}] Gate busy ({reason}). Requeuing through the gate...")
+    enqueue_analysis_for_sequential_processing.send_with_options(
+        kwargs={
+            "analysis_id": analysis_id,
+            "assessment_file": assessment_file,
+            "pdf_file": pdf_file,
+            "png_file": png_file,
+            "csv_file": csv_file,
+            "output_prefix": output_prefix,
+            "model": model,
+            "important_programs": important_programs,
+        },
+        delay=2000,
+    )
+    return {
+        "analysis_id": analysis_id,
+        "status": "queued",
+        "message": f"Gate busy ({reason}); requeued",
+    }
 
 
 @dramatiq.actor(
@@ -217,8 +252,25 @@ def run_analysis_flow_with_tracking(
     """
     try:
         logger.info(f"[Analysis {analysis_id}] Starting APOEMA Flow analysis with model={model}")
-        # Update status to processing
-        update_analysis_status(analysis_id, "processing")
+
+        # Atomically claim the single-processing slot. Actor-level retries
+        # bypass the enqueue actor's FIFO check, so the claim here (advisory
+        # lock + compare-and-swap) is the authoritative gate: if another
+        # analysis is processing, requeue through the gate instead of running
+        # concurrently.
+        if not claim_analysis_processing_slot(analysis_id):
+            return _requeue_through_gate(
+                analysis_id,
+                assessment_file,
+                pdf_file,
+                png_file,
+                csv_file,
+                output_prefix,
+                model,
+                important_programs,
+                "another analysis holds the processing slot",
+            )
+
         logger.info(f"[Analysis {analysis_id}] Status updated to 'processing'")
 
         # Create callback that saves results to database
@@ -270,7 +322,16 @@ def run_analysis_flow_with_tracking(
             "run_analysis_flow_error",
             f"Error: {str(e)}\n\n{traceback.format_exc()}",
         )
-        raise e
+        # Only transient failures warrant an actor-level retry (which re-runs
+        # the whole flow). Non-transient ones (e.g. daily-quota 429) would just
+        # fail again identically — return so Dramatiq does not waste retries.
+        if is_transient_error(e):
+            raise e
+        return {
+            "analysis_id": analysis_id,
+            "status": "failed",
+            "message": f"APOEMA Flow analysis failed (non-transient): {str(e)[:200]}",
+        }
 
 
 @dramatiq.actor(
@@ -306,8 +367,23 @@ def run_analysis_crew_with_tracking(
     """
     try:
         logger.info(f"[Analysis {analysis_id}] Starting APOEMA Crew analysis with model={model}")
-        # Update status to processing
-        update_analysis_status(analysis_id, "processing")
+
+        # Atomically claim the single-processing slot (same gate as the Flow
+        # actor): actor-level retries bypass the enqueue actor's FIFO check,
+        # so the claim is the authoritative gate against concurrent runs.
+        if not claim_analysis_processing_slot(analysis_id):
+            return _requeue_through_gate(
+                analysis_id,
+                assessment_file,
+                pdf_file,
+                png_file,
+                csv_file,
+                output_prefix,
+                model,
+                None,
+                "another analysis holds the processing slot",
+            )
+
         logger.info(f"[Analysis {analysis_id}] Status updated to 'processing'")
 
         # Create callback that saves results to database
@@ -363,4 +439,11 @@ def run_analysis_crew_with_tracking(
             "run_analysis_crew_error",
             f"Error: {str(e)}\n\n{traceback.format_exc()}",
         )
-        raise e
+        # Only transient failures warrant an actor-level retry (see the Flow actor).
+        if is_transient_error(e):
+            raise e
+        return {
+            "analysis_id": analysis_id,
+            "status": "failed",
+            "message": f"APOEMA Crew analysis failed (non-transient): {str(e)[:200]}",
+        }

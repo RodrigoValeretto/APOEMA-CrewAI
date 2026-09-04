@@ -61,6 +61,7 @@ from .validators import (
     determine_workflow_type,
     validate_model_choice,
 )
+from .middleware import setup_middleware
 from . import database, file_manager
 from tasks import (
     enqueue_analysis_for_sequential_processing,
@@ -75,6 +76,9 @@ app = FastAPI(
     description="API for APOEMA - AI-powered assessment analysis",
     version="1.0.0",
 )
+
+# Wire CORS, request logging, and generic exception handlers
+setup_middleware(app)
 
 
 # Exception handlers
@@ -366,7 +370,11 @@ async def retry_analysis_endpoint(analysis_id: int):
         validate_model_choice(model)
         important_programs = analysis.get("important_programs") or []
 
-        # Re-enqueue with the SAME output_prefix so the checkpoint is resumed
+        # Re-enqueue with the SAME output_prefix so the checkpoint is resumed.
+        # Note: status is NOT flipped to 'processing' here — the run actor's
+        # atomic claim (advisory-lock gate) owns that transition, so a retried
+        # analysis can never show 'processing' while actually waiting in the
+        # queue (which would wrongly block other analyses).
         enqueue_analysis_for_sequential_processing.send(
             analysis_id=analysis_id,
             assessment_file=assessment_file,
@@ -377,7 +385,6 @@ async def retry_analysis_endpoint(analysis_id: int):
             model=model,
             important_programs=important_programs,
         )
-        database.update_analysis_status(analysis_id, AnalysisStatus.PROCESSING.value)
 
         return AnalysisResponse(
             id=analysis_id,

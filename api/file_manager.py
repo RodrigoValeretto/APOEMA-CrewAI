@@ -72,6 +72,7 @@ def file_exists(url: str) -> bool:
 async def save_uploaded_file(
     upload_file: UploadFile,
     file_type: FileType,
+    analysis_id: Optional[int] = None,
 ) -> Tuple[int, str]:
     """
     Save an uploaded file to disk and create tracking record
@@ -79,6 +80,7 @@ async def save_uploaded_file(
     Args:
         upload_file: FastAPI UploadFile
         file_type: Type of file being uploaded
+        analysis_id: Optional ID of associated analysis (creates a mapping)
 
     Returns:
         Tuple of (file_id, file_path)
@@ -122,6 +124,14 @@ async def save_uploaded_file(
             file_path=str(file_path),
             file_size=file_size,
         )
+
+        # Link to the analysis if one was provided
+        if analysis_id:
+            database.create_analysis_file_mapping(
+                analysis_id=analysis_id,
+                file_id=file_id,
+                file_type=file_type.value,
+            )
 
         return file_id, str(file_path)
 

@@ -26,10 +26,16 @@ def get_llm(model: str = "gemini"):
             "OLLAMA_HOST", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         )
         ollama_model = os.getenv("OLLAMA_MODEL", "phi4-mini:3.8b")
+        # Local models are slow (phi4-mini on CPU ≈ 3-5 tok/s), and CrewAI's
+        # openai-compatible client defaults to a 600s request timeout — a task
+        # needing ~2-3K output tokens would time out mid-generation and restart
+        # from zero forever. Allow a generous per-request timeout for ollama.
+        ollama_timeout = float(os.getenv("OLLAMA_TIMEOUT", "1800"))
         return LLM(
             model=f"ollama/{ollama_model}",
             base_url=ollama_host,
             temperature=0.4,
+            timeout=ollama_timeout,
         )
 
     # Hosted providers: (crewai model string, env var for the API key).

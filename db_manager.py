@@ -9,6 +9,7 @@ from api.database import (
     get_analysis as db_get_analysis,
     get_all_analyses as db_get_all_analyses,
     update_analysis_status as db_update_analysis_status,
+    claim_analysis_for_processing as db_claim_analysis_for_processing,
     save_analysis_result as db_save_analysis_result,
     get_analysis_results as db_get_analysis_results,
     delete_analysis as db_delete_analysis,
@@ -64,6 +65,10 @@ class DatabaseManager:
         """Update analysis status"""
         db_update_analysis_status(analysis_id, status)
 
+    def claim_processing_slot(self, analysis_id: int) -> bool:
+        """Atomically claim the single-processing slot (FIFO gate)."""
+        return db_claim_analysis_for_processing(analysis_id)
+
     def save_result(
         self,
         analysis_id: int,
@@ -87,19 +92,19 @@ class DatabaseManager:
 
     def create_file_record(
         self,
-        analysis_id: Optional[int],
         file_type: str,
         file_name: str,
         file_path: str,
         file_size: int,
+        url: Optional[str] = None,
     ) -> int:
         """Create a file tracking record"""
         return db_create_analysis_file(
-            analysis_id,
             file_type,
             file_name,
             file_path,
             file_size,
+            url,
         )
 
     def get_file_record(self, file_id: int) -> Optional[Dict[str, Any]]:
@@ -149,6 +154,11 @@ def get_analysis(analysis_id: int) -> Dict[str, Any]:
 def update_analysis_status(analysis_id: int, status: str) -> None:
     """Update analysis status"""
     get_db_manager().update_status(analysis_id, status)
+
+
+def claim_analysis_processing_slot(analysis_id: int) -> bool:
+    """Atomically claim the single-processing slot (FIFO gate)."""
+    return get_db_manager().claim_processing_slot(analysis_id)
 
 
 def save_analysis_result(analysis_id: int, task_name: str, result: str) -> int:

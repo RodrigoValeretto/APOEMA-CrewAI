@@ -24,12 +24,36 @@ TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 CHECKPOINT_DIR = Path("output/.checkpoints")
 
 
+def _is_daily_quota_exhaustion(msg: str) -> bool:
+    """True when the message describes a *daily* quota (not per-minute rate limit).
+
+    Gemini's daily-quota errors carry a quotaId like
+    'GenerateRequestsPerDayPerProjectPerModel-FreeTier' (and the metric
+    '..._free_tier_requests'); per-minute limits use different quotaIds.
+    Retrying a daily quota within the same day is futile — fail fast instead.
+    """
+    return (
+        "RESOURCE_EXHAUSTED" in msg
+        and ("PerDay" in msg or "free_tier_requests" in msg)
+    )
+
+
 def is_transient_error(e: BaseException) -> bool:
-    """Return True when the error is a transient API/network failure worth retrying."""
+    """Return True when the error is a transient API/network failure worth retrying.
+
+    A 429 from a *daily* quota (e.g. the Gemini free tier: 20 req/day) is NOT
+    transient — retrying within the same day is futile and just burns
+    time/requests. Only per-minute rate limits (429 without quota exhaustion)
+    are worth retrying.
+    """
     module = type(e).__module__
+    msg = str(e)
     # google.genai.errors.APIError (Gemini provider) — has a .code HTTP status
     if module.startswith("google.genai") or "APIError" in type(e).__name__:
         code = getattr(e, "code", None)
+        # Daily-quota exhaustion: RESOURCE_EXHAUSTED with a PerDay quotaId → fail fast
+        if code in (429, "429") and _is_daily_quota_exhaustion(msg):
+            return False
         if code is None:
             # GenAI errors without an HTTP code (transport-level) are transient
             return True
@@ -44,8 +68,9 @@ def is_transient_error(e: BaseException) -> bool:
     if isinstance(e, TimeoutError):
         return True
     # Fallback: explicit status strings in the message (provider-agnostic)
-    msg = str(e)
     if "429" in msg or "503" in msg or "502" in msg or "504" in msg:
+        if "429" in msg and _is_daily_quota_exhaustion(msg):
+            return False
         return "quota" in msg.lower() or "demand" in msg.lower() or "unavailable" in msg.lower()
     return False
 
