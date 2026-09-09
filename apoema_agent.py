@@ -86,13 +86,21 @@ def get_embedder():
     }
 
 
-def create_agents(llm, knowledge_sources=None):
+def create_agents(llm, knowledge_sources=None, knowledge_collection=None):
     """Create and return all agents.
 
     `knowledge_sources` (CrewAI Knowledge sources, e.g. JSONKnowledgeSource) are
     attached to the data_reader agent so CrewAI automatically retrieves relevant
     chunks of the assessment file and injects them into the task prompt — the
     reliable alternative to tool-calling RAG.
+
+    `knowledge_collection` (optional) scopes the ChromaDB collection to one
+    analysis (e.g. the output prefix). CrewAI's default `set_knowledge()` names
+    the collection after the agent ROLE, which is identical across analyses —
+    chunks from previous runs then leak into every later analysis's retrieval
+    (observed 2026-09-09: a `basic` analysis received anexo+ficha chunks from
+    an older informativo run). Passing a per-analysis collection name isolates
+    the knowledge base.
     """
     embedder = get_embedder()
     data_reader_config = load_agent_prompt("data_reader")
@@ -110,7 +118,25 @@ def create_agents(llm, knowledge_sources=None):
     # task.execute_sync(), so initialize the knowledge base manually. This chunks
     # + embeds the assessment and enables auto-injection in execute_task.
     if knowledge_sources:
-        data_reader.set_knowledge()
+        if knowledge_collection:
+            # Per-analysis collection: wipe leftovers of a previous run of the
+            # SAME analysis (retry/resume) so chunks never duplicate, then index.
+            from crewai.knowledge.knowledge import Knowledge
+
+            data_reader.knowledge = Knowledge(
+                sources=knowledge_sources,
+                embedder=embedder,
+                collection_name=knowledge_collection,
+            )
+            try:
+                data_reader.knowledge.storage._get_client().delete_collection(
+                    collection_name=f"knowledge_{knowledge_collection}"
+                )
+            except Exception:
+                pass  # first run of this analysis: nothing to wipe
+            data_reader.knowledge.add_sources()
+        else:
+            data_reader.set_knowledge()
 
     summarizer_config = load_agent_prompt("summarizer")
     summarizer = Agent(

@@ -745,6 +745,8 @@ async def upload_assessment_file(
             created_at=file_record["created_at"],
         )
 
+    except ApoemaException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -782,6 +784,8 @@ async def upload_pdf_file(
             created_at=file_record["created_at"],
         )
 
+    except ApoemaException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -817,6 +821,8 @@ async def upload_png_file(
             created_at=file_record["created_at"],
         )
 
+    except ApoemaException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -854,6 +860,8 @@ async def upload_csv_file(
             created_at=file_record["created_at"],
         )
 
+    except ApoemaException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

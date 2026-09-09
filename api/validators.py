@@ -380,32 +380,24 @@ def validate_uploaded_file(
     file_type: FileType,
 ) -> Tuple[bool, str]:
     """
-    Validate an uploaded file
+    Validate an uploaded file.
 
-    Args:
-        file_name: Original filename
-        file_size: File size in bytes
-        file_type: Type of file
-
-    Returns:
-        Tuple of (is_valid: bool, error_message: str)
+    Raises:
+        FileTooLarge: If the file exceeds the maximum allowed size.
+        InvalidFileType: If the file extension is not allowed for the type.
     """
-    try:
-        # Check file size
-        if file_size > MAX_FILE_SIZE_BYTES:
-            raise FileTooLarge(file_size, MAX_FILE_SIZE_BYTES)
+    # Check file size
+    if file_size > MAX_FILE_SIZE_BYTES:
+        raise FileTooLarge(file_size, MAX_FILE_SIZE_BYTES)
 
-        # Check file extension
-        file_ext = Path(file_name).suffix.lower()
-        allowed_exts = ALLOWED_FILE_EXTENSIONS.get(file_type.value, [])
+    # Check file extension
+    file_ext = Path(file_name).suffix.lower()
+    allowed_exts = ALLOWED_FILE_EXTENSIONS.get(file_type.value, [])
 
-        if file_ext not in allowed_exts:
-            raise InvalidFileType(file_ext, allowed_exts)
+    if file_ext not in allowed_exts:
+        raise InvalidFileType(file_ext, allowed_exts)
 
-        return True, ""
-
-    except Exception as e:
-        return False, str(e)
+    return True, ""
 
 
 def validate_url(url: str) -> bool:

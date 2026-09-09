@@ -97,14 +97,12 @@ async def save_uploaded_file(
         file_content = await upload_file.read()
         file_size = len(file_content)
 
-        # Validate file
-        is_valid, error_msg = validate_uploaded_file(
+        # Validate file (raises InvalidFileType/FileTooLarge on failure)
+        validate_uploaded_file(
             upload_file.filename,
             file_size,
             file_type,
         )
-        if not is_valid:
-            raise FileUploadError(error_msg)
 
         # Generate filename with timestamp to avoid conflicts
         from datetime import datetime
@@ -258,14 +256,12 @@ async def download_file_from_url(
             allowed_exts = ALLOWED_FILE_EXTENSIONS.get(file_type.value, [".bin"])
             url_filename = f"download{allowed_exts[0]}"
 
-        # Validate extension
-        is_valid, error_msg = validate_uploaded_file(
+        # Validate extension (raises InvalidFileType/FileTooLarge on failure)
+        validate_uploaded_file(
             url_filename,
             file_size,
             file_type,
         )
-        if not is_valid:
-            raise FileUploadError(error_msg)
 
         # Generate filename with timestamp to avoid conflicts
         from datetime import datetime
