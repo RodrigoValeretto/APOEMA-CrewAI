@@ -76,6 +76,11 @@ services:
       # (~13K tokens) -> runaway generation -> httpx.ReadTimeout (2026-09-09).
       # Raise the server-wide default so every request gets a real window.
       OLLAMA_CONTEXT_LENGTH: 16384
+      # phi4-mini (16K ctx, ~4.9GB) + qwen2.5vl (~3.2GB) cannot coexist in the
+      # 7.65GB Docker VM — loading the vision model killed the llama-server
+      # (signal: killed, OOM) mid png_csv analysis. With MAX_LOADED_MODELS=1
+      # ollama unloads the text model before loading the vision model.
+      OLLAMA_MAX_LOADED_MODELS: 1
       OLLAMA_MODEL: ${OLLAMA_MODEL:-phi4-mini:3.8b}
       OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
     networks:
@@ -88,7 +93,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: apoema-dramatiq-worker
-    command: dramatiq --verbose tasks
+    command: dramatiq --verbose tasks --processes 2
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
