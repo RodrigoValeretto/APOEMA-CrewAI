@@ -1,15 +1,17 @@
 description: |
-  Baseado na imagem PNG de um gráfico/visualização (anexada a esta tarefa) e no arquivo CSV {plot_data} correspondente com os dados subjacentes. Sua tarefa é realizar uma análise técnica e estruturada, combinando interpretação visual com análise estatística dos dados.
+  Baseado na visualização do gráfico (fornecida como imagem PNG anexada ou, no caso de modelos de texto, como uma descrição visual detalhada incluída no final desta tarefa) e no arquivo CSV {plot_data} correspondente com os dados subjacentes. Sua tarefa é realizar uma análise técnica e estruturada, combinando interpretação visual com análise estatística dos dados.
 
-  1. **Interpretação Visual:** Analise a imagem PNG para entender o tipo de gráfico, layout, cores, escalas, eixos e mensagem visual principal que o gráfico comunica.
-  
+  1. **Interpretação Visual:** Analise a visualização para entender o tipo de gráfico, layout, cores, escalas, eixos e mensagem visual principal que o gráfico comunica. Se a visualização foi fornecida como descrição textual, trate essa descrição como a fonte visual real da análise.
+
   2. **Análise dos Dados CSV:** Examine os dados brutos do CSV para validar o que é mostrado no gráfico, identificar padrões, tendências e anomalias.
-  
+
   3. **Análise Estatística e de Tendências:** Identifique padrões de comportamento dos dados (crescimento, estagnação, declínio ou ciclicidade). Estime variações percentuais entre períodos. Identifique outliers e correlações.
-  
+
   4. **Auditoria de Qualidade:** Valide se a escala, o tipo de gráfico e a representação visual são honestos e eficazes. Identifique dados incompletos, lacunas ou problemas de integridade.
-  
+
   5. **Congruência Visual-Dados:** Determine se o que é mostrado visualmente no gráfico é fiel aos dados do CSV. Identifique qualquer discrepância ou manipulação visual.
+
+  IMPORTANTE: responda com a análise REAL baseada nas informações fornecidas. Nunca invente um exemplo hipotético, nunca diga que não consegue ver a imagem e nunca peça pelos dados: tudo o que você precisa está nesta tarefa.
 
 expected_output: |
   Um objeto JSON puro, sem textos introdutórios ou conclusivos, seguindo estritamente a estrutura abaixo:

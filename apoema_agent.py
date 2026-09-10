@@ -345,10 +345,19 @@ def create_tasks(output_prefix, agents, input_files, image_description="", impor
         )
         task7_desc += important_section
         if image_description:
+            # The vision model's description IS the image for text-only
+            # models. Frame it positively ("você vê o gráfico") — the old
+            # wording ("a imagem não está anexada... modelo sem suporte
+            # multimodal") made phi4-mini declare it could not see the chart
+            # and invent a "hypothetical" JSON instead of analyzing the real
+            # description (observed 2026-09-09, analyses 101-102).
             task7_desc += (
-                "\n\nOBSERVAÇÃO: a imagem não está anexada (modelo local sem "
-                "suporte multimodal). Use esta descrição visual obtida pela "
-                "ferramenta de visão para a interpretação visual:\n"
+                "\n\nA imagem do gráfico foi analisada por um modelo de visão "
+                "dedicado. A descrição visual abaixo É o gráfico — baseie toda "
+                "a sua análise visual EXCLUSIVAMENTE nela, como se estivesse "
+                "vendo a imagem, e cruze com os dados do CSV fornecidos. "
+                "NÃO invente dados, títulos ou valores que não estejam na "
+                "descrição ou no CSV. Descrição visual do gráfico:\n"
                 f"{image_description}"
             )
         task7_input_files: dict = {}

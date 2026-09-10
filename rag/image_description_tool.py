@@ -59,10 +59,11 @@ def describe_image(image_path: str) -> str:
             # The server default is OLLAMA_CONTEXT_LENGTH (16384 for the text
             # model), but qwen2.5vl with a 16K window costs ~6GB of RAM and
             # OOM-killed the llama-server mid-analysis in the 7.65GB Docker VM
-            # (2026-09-09). An image + short prompt needs ~1-2K tokens, so cap
-            # the vision window at 4096 — keeps the vision model small enough
-            # to coexist with phi4-mini under MAX_LOADED_MODELS=1.
-            "options": {"num_ctx": 4096},
+            # (2026-09-09). Verified 2026-09-09: num_ctx=4096 TRUNCATES the
+            # vision response ("O gr" instead of the full 2K-char description,
+            # which then makes task 7 hallucinate "hypothetical" chart data);
+            # 8192 produces the full description at ~same RAM as 12288/16384.
+            "options": {"num_ctx": 8192},
         }).encode("utf-8")
 
         req = urllib.request.Request(
