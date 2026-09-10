@@ -345,20 +345,20 @@ def create_tasks(output_prefix, agents, input_files, image_description="", impor
         )
         task7_desc += important_section
         if image_description:
-            # The vision model's description IS the image for text-only
-            # models. Frame it positively ("você vê o gráfico") — the old
-            # wording ("a imagem não está anexada... modelo sem suporte
-            # multimodal") made phi4-mini declare it could not see the chart
-            # and invent a "hypothetical" JSON instead of analyzing the real
-            # description (observed 2026-09-09, analyses 101-102).
+            # phi4-mini refuses to work when the prompt mentions an
+            # "imagem"/"anexo"/"multimodal" it doesn't have (observed
+            # 2026-09-09: analyses 101-103 answered with "hypothetical"
+            # JSON or asked for the data again). Present the vision output
+            # as plain technical data and forbid non-answers.
             task7_desc += (
-                "\n\nA imagem do gráfico foi analisada por um modelo de visão "
-                "dedicado. A descrição visual abaixo É o gráfico — baseie toda "
-                "a sua análise visual EXCLUSIVAMENTE nela, como se estivesse "
-                "vendo a imagem, e cruze com os dados do CSV fornecidos. "
-                "NÃO invente dados, títulos ou valores que não estejam na "
-                "descrição ou no CSV. Descrição visual do gráfico:\n"
-                f"{image_description}"
+                "\n\nDADOS TÉCNICOS DA VISUALIZAÇÃO (levantamento visual "
+                "completo do gráfico, já realizado e fornecido abaixo):\n"
+                f"{image_description}\n\n"
+                "Use estes dados como a representação visual integral do "
+                "gráfico ao cumprir todos os itens pedidos. Responda com a "
+                "análise real e completa — não peça dados adicionais, não "
+                "mencione limitações de modelo e não produza exemplos "
+                "hipotéticos."
             )
         task7_input_files: dict = {}
         if not image_description:

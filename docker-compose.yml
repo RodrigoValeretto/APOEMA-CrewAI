@@ -81,7 +81,7 @@ services:
       # (signal: killed, OOM) mid png_csv analysis. With MAX_LOADED_MODELS=1
       # ollama unloads the text model before loading the vision model.
       OLLAMA_MAX_LOADED_MODELS: 1
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi4-mini:3.8b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
     networks:
       - apoema_network
@@ -104,7 +104,7 @@ services:
       DRAMATIQ_BROKER_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
       OLLAMA_HOST: http://ollama:11434
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi4-mini:3.8b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
@@ -197,7 +197,7 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
       OLLAMA_HOST: http://ollama:11434
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi4-mini:3.8b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
       PYTHONUNBUFFERED: 1
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}

@@ -1,9 +1,12 @@
 description: |
-  Baseado na visualização do gráfico (fornecida como imagem PNG anexada ou, no caso de modelos de texto, como uma descrição visual detalhada incluída no final desta tarefa) e no arquivo CSV {plot_data} correspondente com os dados subjacentes. Sua tarefa é realizar uma análise técnica e estruturada, combinando interpretação visual com análise estatística dos dados.
+  Você recebeu, já carregados nesta mensagem, dois insumos completos: (a) os dados tabulares (CSV) do programa; e (b) o levantamento visual do gráfico. Nada precisa ser acessado externamente — analise o que está abaixo. Sua tarefa é realizar uma análise técnica e estruturada, combinando interpretação visual com análise estatística dos dados.
 
-  1. **Interpretação Visual:** Analise a visualização para entender o tipo de gráfico, layout, cores, escalas, eixos e mensagem visual principal que o gráfico comunica. Se a visualização foi fornecida como descrição textual, trate essa descrição como a fonte visual real da análise.
+  DADOS TABULARES (CSV):
+  {plot_data}
 
-  2. **Análise dos Dados CSV:** Examine os dados brutos do CSV para validar o que é mostrado no gráfico, identificar padrões, tendências e anomalias.
+  1. **Interpretação Visual:** Analise o levantamento visual do gráfico para entender o tipo de gráfico, layout, cores, escalas, eixos e mensagem visual principal que o gráfico comunica.
+
+  2. **Análise dos Dados CSV:** Examine os dados brutos do CSV acima para validar o que é mostrado no gráfico, identificar padrões, tendências e anomalias.
 
   3. **Análise Estatística e de Tendências:** Identifique padrões de comportamento dos dados (crescimento, estagnação, declínio ou ciclicidade). Estime variações percentuais entre períodos. Identifique outliers e correlações.
 
@@ -11,7 +14,7 @@ description: |
 
   5. **Congruência Visual-Dados:** Determine se o que é mostrado visualmente no gráfico é fiel aos dados do CSV. Identifique qualquer discrepância ou manipulação visual.
 
-  IMPORTANTE: responda com a análise REAL baseada nas informações fornecidas. Nunca invente um exemplo hipotético, nunca diga que não consegue ver a imagem e nunca peça pelos dados: tudo o que você precisa está nesta tarefa.
+  IMPORTANTE: todos os dados necessários estão nesta mensagem. Responda com a análise REAL no formato pedido; nunca produza um exemplo hipotético, nunca peça dados adicionais e nunca mencione limitações do modelo.
 
 expected_output: |
   Um objeto JSON puro, sem textos introdutórios ou conclusivos, seguindo estritamente a estrutura abaixo:
