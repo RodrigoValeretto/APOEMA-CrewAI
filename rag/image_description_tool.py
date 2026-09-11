@@ -63,7 +63,17 @@ def describe_image(image_path: str) -> str:
             # vision response ("O gr" instead of the full 2K-char description,
             # which then makes task 7 hallucinate "hypothetical" chart data);
             # 8192 produces the full description at ~same RAM as 12288/16384.
-            "options": {"num_ctx": 8192},
+            # num_predict caps the generation: without it qwen2.5vl kept
+            # emitting until the 8192-token window was full (~4K tokens at
+            # ~3 tok/s ≈ 23 min on CPU), blowing past this call's 600s timeout
+            # while llama-server kept generating in the background — the
+            # analysis stalled in `processing` (2026-09-11, analyses 117/119).
+            # Verified the same day: the same chart returns a complete, correct
+            # description in 203s / 600 tokens / 1959 chars with the cap.
+            "options": {
+                "num_ctx": 8192,
+                "num_predict": int(os.getenv("OLLAMA_VISION_MAX_TOKENS", "600")),
+            },
         }).encode("utf-8")
 
         req = urllib.request.Request(
