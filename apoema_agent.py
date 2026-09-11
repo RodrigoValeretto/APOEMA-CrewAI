@@ -82,8 +82,35 @@ def get_embedder():
         "config": {
             "url": f"{ollama_host}/api/embeddings",
             "model_name": os.getenv("RAG_EMBEDDING_MODEL", "nomic-embed-text"),
+            # chromadb's OllamaEmbeddingFunction defaults to a 60s client
+            # timeout, and CrewAI forwards extra config keys straight to it.
+            # Indexing embeds the assessment while the same ollama is busy
+            # generating a task (or swapping models, which
+            # OLLAMA_MAX_LOADED_MODELS=1 forces), so a queued embed easily
+            # outlives 60s and kills the analysis with "timed out in upsert"
+            # (2026-09-11, analysis 116). 900s covers a full slow generation.
+            "timeout": int(os.getenv("OLLAMA_EMBED_TIMEOUT", "900")),
         },
     }
+
+
+def _index_with_retry(index_fn, label: str) -> None:
+    """Index the Knowledge base, degrading instead of failing the analysis.
+
+    Indexing embeds the sources through the Ollama embedder, which sometimes
+    waits behind a long generation or the model swap that
+    OLLAMA_MAX_LOADED_MODELS=1 forces. Retrieval is an enhancement — the
+    assessment still reaches the tasks through input_files — so an exhausted
+    retry continues without the base rather than failing the whole run
+    (observed 2026-09-11, analysis 116).
+    """
+    try:
+        retry_with_backoff(index_fn, label=label)
+    except Exception as e:  # noqa: BLE001 - degrade, never fail the analysis
+        print(
+            f"⚠️  {label} failed after retries — continuing without retrieval "
+            f"({type(e).__name__}: {str(e)[:120]})"
+        )
 
 
 def create_agents(llm, knowledge_sources=None, knowledge_collection=None):
@@ -134,9 +161,12 @@ def create_agents(llm, knowledge_sources=None, knowledge_collection=None):
                 )
             except Exception:
                 pass  # first run of this analysis: nothing to wipe
-            data_reader.knowledge.add_sources()
+            _index_with_retry(
+                data_reader.knowledge.add_sources,
+                label=f"Knowledge indexing ({knowledge_collection})",
+            )
         else:
-            data_reader.set_knowledge()
+            _index_with_retry(data_reader.set_knowledge, label="Knowledge indexing")
 
     summarizer_config = load_agent_prompt("summarizer")
     summarizer = Agent(
