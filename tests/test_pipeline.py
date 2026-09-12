@@ -39,14 +39,21 @@ def test_get_embedder_is_ollama():
 
 
 def test_index_with_retry_degrades_instead_of_failing(monkeypatch):
-    """Exhausted Knowledge indexing must not take the analysis down with it."""
+    """Exhausted Knowledge indexing must not take the analysis down with it.
+
+    It must also report the failure, so no cache marker is written for an index
+    that was never built.
+    """
     import apoema_agent
 
     def _boom(*args, **kwargs):
         raise TimeoutError("timed out in upsert")
 
     monkeypatch.setattr(apoema_agent, "retry_with_backoff", _boom)
-    apoema_agent._index_with_retry(lambda: None, "Knowledge indexing (probe)")
+    assert (
+        apoema_agent._index_with_retry(lambda: None, "Knowledge indexing (probe)")
+        is False
+    )
 
     indexed = []
     monkeypatch.setattr(
@@ -54,8 +61,21 @@ def test_index_with_retry_degrades_instead_of_failing(monkeypatch):
         "retry_with_backoff",
         lambda fn, **kwargs: indexed.append(fn) or fn(),
     )
-    apoema_agent._index_with_retry(lambda: "ok", "Knowledge indexing (probe)")
+    assert (
+        apoema_agent._index_with_retry(lambda: "ok", "Knowledge indexing (probe)")
+        is True
+    )
     assert len(indexed) == 1
+
+
+def test_agents_without_knowledge_sources_have_no_knowledge():
+    """No sources ⇒ no Knowledge base, so no run can retrieve another's chunks."""
+    from apoema_agent import get_llm, create_agents
+
+    agents = create_agents(get_llm(model="gemini"))
+    data_reader = next(a for a in agents if "Analista" in a.role)
+
+    assert data_reader.knowledge is None
 
 
 def test_get_llm_supports_multiple_providers():
