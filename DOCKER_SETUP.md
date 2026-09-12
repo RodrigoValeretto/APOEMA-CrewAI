@@ -41,6 +41,12 @@ Este guia descreve como usar o Docker Compose para executar a aplicação APOEMA
 `conversion` — conversão de documentos PDF/XLSX→JSON via docling; 1 processo,
 volumes `./:/app` + `hf_cache` para os modelos HuggingFace do docling).
 
+O `dramatiq_worker` monta ainda o volume **`chroma_data`** em
+`/root/.local/share/app`, onde o ChromaDB guarda o **índice de Knowledge**
+(chunks embedados das fichas/anexos). Sem ele, toda recriação de container
+re-embeda todas as fontes (~13-16 s por análise) — o índice é endereçado pelo
+conteúdo, então análises que reutilizam os mesmos arquivos o reaproveitam.
+
 > **Notas de build (Dockerfile):**
 > - `dramatiq` é **pinado `<2`** (`>=1.15.0,<2.0.0`): a linha 2.x quebra a CLI
 >   (exige positional `broker`) e a API de filas.
