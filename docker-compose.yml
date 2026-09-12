@@ -132,6 +132,11 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./:/app
+      # Persist the CrewAI Knowledge index. ChromaDB stores it under
+      # /root/.local/share/<workdir> inside the container, so without a volume
+      # every recreate re-embeds every source: slow (~13-16s per analysis) and
+      # the step that fails when ollama is busy ("timed out in upsert").
+      - chroma_data:/root/.local/share/app
     networks:
       - apoema_network
     # Healthcheck to monitor worker process
@@ -233,6 +238,7 @@ volumes:
   rabbitmq_data:
   ollama_data:
   hf_cache:
+  chroma_data:
 
 networks:
   apoema_network:
