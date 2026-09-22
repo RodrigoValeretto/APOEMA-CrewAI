@@ -57,6 +57,7 @@ class ApoemaFlow(Flow):
         analysis_id=None,
         on_task_complete=None,
         fresh=False,
+        knowledge_files=None,
     ):
         super().__init__()
 
@@ -70,6 +71,7 @@ class ApoemaFlow(Flow):
         self.state["important_programs"] = important_programs
         self.state["analysis_id"] = analysis_id
         self.state["fresh"] = fresh
+        self.state["knowledge_files"] = knowledge_files or []
 
         # Store callback function
         self.on_task_complete = on_task_complete
@@ -88,11 +90,16 @@ class ApoemaFlow(Flow):
         # chunks + embeds the file and auto-injects the relevant chunks into the
         # data_reader's prompt (no tool-calling needed). Note: CrewAI prepends
         # "knowledge/" to string paths, so pass a Path object for absolute paths.
+        # Extra converted documents (anexos/adendos de um informativo) are added
+        # as further Knowledge sources so retrieval covers the whole corpus.
         knowledge_sources = None
         if os.path.exists(assessment_file):
-            knowledge_sources = [
-                JSONKnowledgeSource(file_paths=[Path(assessment_file)])
-            ]
+            knowledge_sources = [JSONKnowledgeSource(file_paths=[Path(assessment_file)])]
+        for extra_file in self.state["knowledge_files"]:
+            if extra_file and os.path.exists(extra_file):
+                if knowledge_sources is None:
+                    knowledge_sources = []
+                knowledge_sources.append(JSONKnowledgeSource(file_paths=[Path(extra_file)]))
         agents = create_agents(llm, knowledge_sources=knowledge_sources)
 
         # Prepare input files based on workflow type
@@ -392,6 +399,7 @@ def run_apoema_flow(
     analysis_id=None,
     on_task_complete=None,
     fresh=False,
+    knowledge_files=None,
 ):
     """
     Execute the APOEMA assessment analysis pipeline using Flow.
@@ -423,6 +431,7 @@ def run_apoema_flow(
         analysis_id=analysis_id,
         on_task_complete=on_task_complete,
         fresh=fresh,
+        knowledge_files=knowledge_files,
     )
 
     flow.plot()

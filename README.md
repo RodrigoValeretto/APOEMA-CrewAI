@@ -74,6 +74,20 @@ Entrada: PNG plot + CSV data
   ↓ Output: {prefix}_plot_importance.md
 ```
 
+#### Fluxo 3: Conversão de Fichas CAPES (PDF/XLSX → JSON) via Informativo
+As fichas de avaliação da CAPES (PDF) e anexos/adendos (XLSX) são convertidos para um
+JSON enriquecido em background e agrupados por **informativo** (corpus da área, ex.
+"Ciência da Computação"). Uma análise pode ser disparada direto pelo `informativo_id`:
+a ficha convertida vira o `assessment_file` e anexos/adendos entram como fontes de
+Knowledge (retrieval automático) — ver seção de endpoints abaixo.
+```
+Upload PDF/XLSX → POST /api/informativos/{id}/documentos (kind=ficha|anexo|adendo)
+  ↓ fila dedicada 'conversion' (converter_worker, docling)
+JSON enriquecido (uploads/converted/doc_{id}.json) registrado em analysis_files
+  ↓
+POST /api/analysis {"informativo_id": N} → ficha = assessment + anexos = Knowledge
+```
+
 ## 🚀 Como Usar
 
 ### Pré-requisitos

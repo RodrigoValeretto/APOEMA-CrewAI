@@ -200,8 +200,12 @@ Cliente faz polling:
 
 ### Analysis Management
 - **POST /api/analysis**
-  - Body: `{assessment_file, pdf_path, png_path, csv_path, model}`
-  - Response: `{id, type, status, created_at}` (201 Created)
+  - Body: `{assessment_file | assessment_file_id | assessment_file_url | informativo_id,
+    pdf_path, png_path, csv_path, model, important_programs[]}`
+  - `informativo_id` (alternativo ao assessment): usa a ficha convertida mais recente
+    do informativo como `assessment_file` e anexos/adendos convertidos como fontes de
+    Knowledge (retrieval) — campos de assessment são mutuamente exclusivos com ele
+  - Response: `{id, type, status, created_at, informativo_id}` (201 Created)
   - Cria analysis no BD, envia Dramatiq task
 
 - **GET /api/analysis**
@@ -210,7 +214,7 @@ Cliente faz polling:
   - Paginado, filtrado, ordenado por created_at DESC
 
 - **GET /api/analysis/{analysis_id}**
-  - Response: `{id, type, status, created_at, updated_at, results[...], progress{...}}`
+  - Response: `{id, type, status, created_at, updated_at, informativo_id, results[...], progress{...}}`
   - Detalhes completos com todos os resultados de tasks
 
 - **GET /api/analysis/{analysis_id}/results**
@@ -234,6 +238,23 @@ Cliente faz polling:
 - **DELETE /api/files/{file_id}**
   - Response: `{message, id}`
   - Deleta arquivo do disco e registro do BD
+
+### Informativos (conversão de documentos PDF/XLSX → JSON)
+- **POST /api/informativos** — body `{nome, quadrienio?}` → cria corpus da área
+  (slug gerado via NFKD, ex. "ciência da computação" → `ciencia_da_computacao`)
+- **GET /api/informativos** / **GET /api/informativos/{id}** — lista com contagem
+  de documentos (total/completed)
+- **POST /api/informativos/{id}/documentos** — multipart `file` + form `kind`
+  (`ficha`→.pdf; `anexo|adendo`→.pdf/.xlsx); salva o upload, registra documento
+  (status `pending`) e enfileira a conversão na fila `conversion`
+  (Dramatiq, `converter_worker`) → Response (201) com status do documento
+- **GET /api/informativos/{id}/documentos** — lista documentos + estado da
+  conversão (`pending|processing|completed|failed`, com `error`)
+- **GET /api/informativos/{id}/documentos/{document_id}** — um documento
+- **GET /api/informativos/{id}/documentos/{document_id}/conteudo** — baixa o JSON
+  convertido (404 se o documento não pertence ao informativo; 409 se não convertido)
+- Conversão concluída grava `uploads/converted/doc_{id}.json` e registra em
+  `analysis_files` com `file_type='assessment'` (ficha) ou `'anexo'` (anexo/adendo)
 
 ---
 
@@ -279,6 +300,34 @@ CREATE TABLE analysis_files (
 - `idx_analysis_type`, `idx_analysis_status`, `idx_analysis_created_at`
 - `idx_analysis_results_analysis_id`, `idx_analysis_results_task_name`, `idx_analysis_results_created_at`
 - `idx_analysis_files_analysis_id`, `idx_analysis_files_type`, `idx_analysis_files_created_at`
+
+> **Nota:** o schema acima reflete a fase V2. Migrations posteriores: **V3**
+> (vínculo analysis↔files movido para `analysis_file_mapping`; `analysis_files`
+> deixou de ter `analysis_id`), **V4** (dedup por URL), **V5** (`analysis.model`),
+> **V6** (`analysis.important_programs` TEXT[]) e **V7** (informativos).
+
+### Tabelas V7: informativos + informativo_documents (conversão de documentos)
+```sql
+CREATE TABLE informativos (
+    id SERIAL PRIMARY KEY,
+    nome VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) NOT NULL UNIQUE,      -- ex.: ciencia_da_computacao
+    quadrienio VARCHAR(32),                 -- ex.: 2025-2028
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE informativo_documents (
+    id SERIAL PRIMARY KEY,
+    informativo_id INTEGER NOT NULL REFERENCES informativos(id) ON DELETE CASCADE,
+    kind VARCHAR(32) NOT NULL,              -- ficha | anexo | adendo
+    status VARCHAR(32) NOT NULL DEFAULT 'pending', -- pending|processing|completed|failed
+    original_file_id INTEGER REFERENCES analysis_files(id),
+    converted_file_id INTEGER REFERENCES analysis_files(id),  -- JSON convertido
+    error TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- V7 também adiciona: ALTER TABLE analysis ADD COLUMN informativo_id INTEGER REFERENCES informativos(id);
+```
 
 ---
 
@@ -466,12 +515,19 @@ T=35.5s: Client GET /api/analysis/42
 ## ✨ Recursos Implementados
 
 ✅ **Core API**
-- [x] 13 endpoints HTTP RESTful
+- [x] 21 endpoints HTTP RESTful (análises + arquivos + informativos)
 - [x] Validação de entrada robusta
 - [x] Error handling estruturado
 - [x] CORS middleware
 - [x] Request logging
 - [x] Pydantic models para type safety
+
+✅ **Conversão de Documentos (Informativo — branch json-converter)**
+- [x] Upload de ficha (PDF) e anexos/adendos (PDF/XLSX) por informativo
+- [x] Conversão assíncrona (Dramatiq, fila `conversion`, `converter_worker` + docling)
+- [x] JSON enriquecido (`conversion/serialize.py`, schema `apoema-json-converter-v1`)
+- [x] Análise por `informativo_id`: ficha convertida = assessment; anexos = Knowledge
+- [x] Retry de análise reconstrói anexos (file_type `anexo` agrupado em lista)
 
 ✅ **Database Integration**
 - [x] PostgreSQL com psycopg3

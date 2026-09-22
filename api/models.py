@@ -81,6 +81,16 @@ class AnalysisRequest(BaseModel):
         ),
         examples=[["UFPA-A-5-CC", "UFBA-A-5-CC"]],
     )
+    informativo_id: Optional[int] = Field(
+        None,
+        description=(
+            "ID of an informativo (CAPES area corpus). The informativo's converted "
+            "ficha is used as the assessment file and its converted anexos/adendos "
+            "are attached as extra Knowledge sources (retrieval). Alternative to "
+            "assessment_file / assessment_file_id / assessment_file_url."
+        ),
+        examples=[1],
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -157,6 +167,10 @@ class AnalysisResponse(BaseModel):
         None,
         description="Program identifiers marked as important by the user",
     )
+    informativo_id: Optional[int] = Field(
+        None,
+        description="Informativo (CAPES area corpus) that sourced this analysis, if any",
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -225,6 +239,10 @@ class AnalysisDetailResponse(BaseModel):
     important_programs: Optional[List[str]] = Field(
         None,
         description="Program identifiers marked as important by the user",
+    )
+    informativo_id: Optional[int] = Field(
+        None,
+        description="Informativo (CAPES area corpus) that sourced this analysis, if any",
     )
     results: List[TaskResult] = Field(default_factory=list)
     progress: ProgressInfo
@@ -443,3 +461,103 @@ class ResultsResponse(BaseModel):
             }
         }
     }
+
+
+# ---------------------------------------------------------------------------
+# Informativos (CAPES area corpus) + document conversion
+# ---------------------------------------------------------------------------
+class InformativoCreate(BaseModel):
+    """Request model for creating an informativo"""
+
+    nome: str = Field(
+        ...,
+        min_length=3,
+        description="Human name of the CAPES area (e.g. 'Ciência da Computação')",
+        examples=["Ciência da Computação"],
+    )
+    quadrienio: Optional[str] = Field(
+        None,
+        description="CAPES quadrennium label",
+        examples=["2025-2028"],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "nome": "Ciência da Computação",
+                "quadrienio": "2025-2028",
+            }
+        }
+    }
+
+
+class InformativoResponse(BaseModel):
+    """Response model for an informativo"""
+
+    id: int
+    nome: str
+    slug: str
+    quadrienio: Optional[str] = None
+    created_at: datetime
+    total_documents: int = Field(default=0)
+    completed_documents: int = Field(default=0)
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "id": 1,
+                "nome": "Ciência da Computação",
+                "slug": "ciencia_da_computacao",
+                "quadrienio": "2025-2028",
+                "created_at": "2026-09-04T12:00:00Z",
+                "total_documents": 3,
+                "completed_documents": 2,
+            }
+        }
+    }
+
+
+class InformativoListResponse(BaseModel):
+    """Response model for informativo listing"""
+
+    total: int
+    items: List[InformativoResponse]
+
+
+class InformativoDocumentResponse(BaseModel):
+    """Response model for an informativo document + its conversion state"""
+
+    id: int
+    informativo_id: int
+    kind: str  # ficha | anexo | adendo
+    status: str  # pending | processing | completed | failed
+    error: Optional[str] = None
+    original_file_id: Optional[int] = None
+    original_file_name: Optional[str] = None
+    original_file_size: Optional[int] = None
+    converted_file_id: Optional[int] = None
+    converted_file_name: Optional[str] = None
+    converted_file_size: Optional[int] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "id": 7,
+                "informativo_id": 1,
+                "kind": "ficha",
+                "status": "completed",
+                "original_file_name": "COMPUTACAO_FICHA_2025_2028.pdf",
+                "converted_file_name": "doc_7.json",
+                "converted_file_size": 41220,
+            }
+        }
+    }
+
+
+class InformativoDocumentListResponse(BaseModel):
+    """Response model for the documents of an informativo"""
+
+    informativo_id: int
+    items: List[InformativoDocumentResponse]

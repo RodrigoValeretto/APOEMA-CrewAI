@@ -529,6 +529,51 @@ ab -n 100 -c 10 http://localhost:8000/health
 
 ---
 
+## 🧪 Testando a Conversão de Documentos (Informativos — branch json-converter)
+
+A stack atual inclui o serviço **`converter_worker`** (`docker compose up -d` sobe tudo).
+
+### 1. Criar informativo (corpus da área)
+```bash
+curl -X POST http://localhost:8000/api/informativos \
+  -H "Content-Type: application/json" \
+  -d '{"nome": "Ciência da Computação", "quadrienio": "2025-2028"}'
+# → {"id": 2, "slug": "ciencia_da_computacao", ...}
+```
+
+### 2. Upload da ficha (PDF) e anexo (XLSX) → conversão assíncrona
+```bash
+curl -X POST http://localhost:8000/api/informativos/2/documentos \
+  -F "file=@COMPUTACAO_FICHA_2025_2028.pdf" -F "kind=ficha"    # → doc id (status pending)
+curl -X POST http://localhost:8000/api/informativos/2/documentos \
+  -F "file=@anexo.xlsx" -F "kind=anexo"
+```
+
+### 3. Poll do status de conversão
+```bash
+curl http://localhost:8000/api/informativos/2/documentos
+# items[] com kind/status/error; aguardar até "completed" (~10-90s por PDF)
+# Baixar o JSON convertido:
+curl http://localhost:8000/api/informativos/2/documentos/5/conteudo -o ficha.json
+```
+
+### 4. Análise disparada pelo informativo (ficha = assessment; anexos = Knowledge)
+```bash
+curl -X POST http://localhost:8000/api/analysis \
+  -H "Content-Type: application/json" \
+  -d '{"informativo_id": 2, "model": "gemini"}'
+# → {id, type: "basic", status: "pending", informativo_id: 2}
+```
+
+### Erros esperados (validados)
+- `kind` inválido ou extensão errada (ex.: .txt/.xlsx como `ficha`) → **400**
+- informativo inexistente / documento de outro informativo → **404**
+- `informativo_id` combinado com assessment explícito → **400**
+- análise em informativo sem ficha convertida → **400**
+- `/conteudo` de documento não convertido → **409**
+
+---
+
 ## 📚 Recursos
 
 - API Docs: http://localhost:8000/docs (Swagger UI)
@@ -538,6 +583,6 @@ ab -n 100 -c 10 http://localhost:8000/health
 
 ---
 
-**Última atualização:** Junho 2024
-**Versão:** 1.0.0
+**Última atualização:** Setembro 2026 (feature json-converter)
+**Versão:** 2.0.0
 **Status:** Pronto para testes ✅

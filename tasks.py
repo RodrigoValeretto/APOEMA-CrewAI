@@ -23,16 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Configure RabbitMQ broker BEFORE defining actors
 # This must happen before @dramatiq.actor decorators are processed
-from dramatiq.brokers.rabbitmq import RabbitmqBroker
-
-rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
-
-# Configure RabbitMQ broker
-# Using URL parameter is simplest and avoids pika parameter conflicts
-broker = RabbitmqBroker(
-    url=rabbitmq_url,
-)
-dramatiq.set_broker(broker)
+from dramatiq_broker import broker  # noqa: F401  (registers the broker on dramatiq)
 
 # Now import the modules that use dramatiq
 from apoema_flow import run_apoema_flow
@@ -57,6 +48,7 @@ def _requeue_through_gate(
     model,
     important_programs,
     reason: str,
+    knowledge_files: list = None,
 ) -> dict:
     """Re-queue an analysis through the sequential-processing gate."""
     logger.info(f"[Analysis {analysis_id}] Gate busy ({reason}). Requeuing through the gate...")
@@ -70,6 +62,7 @@ def _requeue_through_gate(
             "output_prefix": output_prefix,
             "model": model,
             "important_programs": important_programs,
+            "knowledge_files": knowledge_files,
         },
         delay=2000,
     )
@@ -96,6 +89,7 @@ def enqueue_analysis_for_sequential_processing(
     output_prefix: str = None,
     model: str = "ollama",
     important_programs: list = None,
+    knowledge_files: list = None,
 ) -> dict:
     """
     Intermediate task that manages sequential processing of analyses.
@@ -158,6 +152,7 @@ def enqueue_analysis_for_sequential_processing(
                     "output_prefix": output_prefix,
                     "model": model,
                     "important_programs": important_programs,
+                    "knowledge_files": knowledge_files,
                 },
                 delay=2000,  # 2 second delay before retry (Dramatiq will add exponential backoff)
             )
@@ -178,6 +173,7 @@ def enqueue_analysis_for_sequential_processing(
             output_prefix=output_prefix,
             model=model,
             important_programs=important_programs,
+            knowledge_files=knowledge_files,
         )
 
         return {
@@ -200,6 +196,7 @@ def enqueue_analysis_for_sequential_processing(
             output_prefix=output_prefix,
             model=model,
             important_programs=important_programs,
+            knowledge_files=knowledge_files,
         )
         return {
             "analysis_id": analysis_id,
@@ -224,6 +221,7 @@ def run_analysis_flow_with_tracking(
     output_prefix: str = None,
     model: str = "ollama",
     important_programs: list = None,
+    knowledge_files: list = None,
 ) -> dict:
     """
     Async task to run APOEMA Flow analysis with database tracking.
@@ -269,6 +267,7 @@ def run_analysis_flow_with_tracking(
                 model,
                 important_programs,
                 "another analysis holds the processing slot",
+                knowledge_files=knowledge_files,
             )
 
         logger.info(f"[Analysis {analysis_id}] Status updated to 'processing'")
@@ -299,6 +298,7 @@ def run_analysis_flow_with_tracking(
             important_programs=important_programs,
             analysis_id=analysis_id,
             on_task_complete=on_task_complete,
+            knowledge_files=knowledge_files,
         )
         logger.info(f"[Analysis {analysis_id}] CrewAI flow completed successfully")
 

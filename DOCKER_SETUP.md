@@ -36,6 +36,23 @@ Este guia descreve como usar o Docker Compose para executar a aplicação APOEMA
 └─────────────────────────────────────────────────┘
 ```
 
+**Serviços atuais:** `postgres`, `rabbitmq`, `ollama`, `flyway`, `app` (FastAPI :8000),
+`dramatiq_worker` (fila `default` — análises) e **`converter_worker`** (fila
+`conversion` — conversão de documentos PDF/XLSX→JSON via docling; 1 processo,
+volumes `./:/app` + `hf_cache` para os modelos HuggingFace do docling).
+
+> **Notas de build (Dockerfile):**
+> - `dramatiq` é **pinado `<2`** (`>=1.15.0,<2.0.0`): a linha 2.x quebra a CLI
+>   (exige positional `broker`) e a API de filas.
+> - `torch` é instalado **CPU-only** (`--index-url .../whl/cpu`) antes do `pip
+>   install -e ".[converter]"` — o wheel padrão do PyPI puxa pacotes `nvidia-*`
+>   CUDA (vários GB, estouram o disco do build).
+> - docling no `python:slim` precisa de libs apt (`libgl1`, `libglib2.0-0`,
+>   `libxcb*`, `libxkbcommon0`) — sem elas a conversão falha com
+>   `libxcb.so.1: cannot open shared object file`.
+> - Extra opcional `[converter]` = `docling` + `openpyxl` (a importação do docling
+>   é lazy: só o `converter_worker` carrega torch).
+
 ## Pré-requisitos
 
 - Docker e Docker Compose instalados

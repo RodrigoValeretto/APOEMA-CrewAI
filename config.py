@@ -62,7 +62,13 @@ class Config:
         "pdf": [".pdf"],
         "png": [".png"],
         "csv": [".csv"],
+        "xlsx": [".xlsx"],
     }
+
+    # Document conversion (informativo PDFs/XLSXs -> JSON)
+    CONVERTER_DIR = UPLOAD_DIR / "converted"
+    # Fichas/relatórios CAPES têm camada de texto; OCR (docling) só sob demanda
+    CONVERTER_OCR = os.getenv("CONVERTER_OCR", "false").lower() == "true"
 
     # LLM Configuration
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -99,6 +105,7 @@ class Config:
     def __init__(self):
         """Initialize and create necessary directories"""
         self.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        self.CONVERTER_DIR.mkdir(parents=True, exist_ok=True)
 
     def to_dict(self) -> dict:
         """Convert configuration to dictionary"""

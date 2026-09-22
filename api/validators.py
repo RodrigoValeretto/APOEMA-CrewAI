@@ -18,6 +18,15 @@ from .exceptions import (
     InvalidFileType,
     FileTooLarge,
 )
+import re
+import unicodedata
+
+
+def slugify(text: str) -> str:
+    """Slugify an informativo name (NFKD -> ascii lowercase, _ separators)."""
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^a-zA-Z0-9]+", "_", text.lower()).strip("_")
+    return text or "informativo"
 
 
 def validate_file_path(file_path: str) -> bool:
@@ -264,6 +273,7 @@ def validate_analysis_request(
     csv_file_id: int = None,
     csv_url: str = None,
     model: str = None,
+    informativo_id: int = None,
 ) -> Tuple[bool, str]:
     """
     Validate complete analysis request
@@ -303,9 +313,18 @@ def validate_analysis_request(
             csv_url=csv_url,
         )
 
-        # Validate that assessment file is provided (either path, ID, or URL)
-        if not assessment_file and not assessment_file_id and not assessment_file_url:
-            return False, "assessment_file, assessment_file_id, or assessment_file_url must be provided"
+        # Validate that assessment input comes from ONE source: either an
+        # explicit assessment file (path/ID/URL) or an informativo whose
+        # converted ficha plays that role.
+        has_assessment_source = bool(assessment_file or assessment_file_id or assessment_file_url)
+        if informativo_id and has_assessment_source:
+            return (
+                False,
+                "informativo_id cannot be combined with assessment_file / "
+                "assessment_file_id / assessment_file_url",
+            )
+        if not informativo_id and not has_assessment_source:
+            return False, "assessment_file, assessment_file_id, assessment_file_url, or informativo_id must be provided"
 
         # Validate URLs
         if assessment_file_url:
