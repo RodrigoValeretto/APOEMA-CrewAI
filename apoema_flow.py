@@ -7,11 +7,13 @@ from crewai_files import PDFFile, TextFile, ImageFile
 from crewai.tasks.task_output import TaskOutput
 from apoema_agent import (
     get_llm,
+    get_embedding_model,
     describe_image,
     create_agents,
     create_tasks,
 )
 from crewai.knowledge.source.json_knowledge_source import JSONKnowledgeSource
+from knowledge_cache import cache_key
 from retry_utils import (
     retry_with_backoff,
     load_checkpoint,
@@ -103,10 +105,16 @@ class ApoemaFlow(Flow):
         agents = create_agents(
             llm,
             knowledge_sources=knowledge_sources,
-            # Per-analysis ChromaDB collection: CrewAI's default names it after
-            # the agent role (constant), so chunks from previous analyses leak
-            # into later retrievals (cross-analysis contamination, 2026-09-09).
-            knowledge_collection=output_prefix,
+            # Content-addressed ChromaDB collection (see knowledge_cache): it
+            # isolates different sources — CrewAI's default names the collection
+            # after the agent role, a constant, which leaked chunks across
+            # analyses (2026-09-09) — and lets analyses that share a source reuse
+            # the embedded index instead of paying the embed again.
+            knowledge_collection=(
+                cache_key(knowledge_sources, get_embedding_model())
+                if knowledge_sources
+                else None
+            ),
         )
 
         # Prepare input files based on workflow type

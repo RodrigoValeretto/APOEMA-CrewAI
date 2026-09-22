@@ -88,6 +88,13 @@ JSON enriquecido (uploads/converted/doc_{id}.json) registrado em analysis_files
 POST /api/analysis {"informativo_id": N} → ficha = assessment + anexos = Knowledge
 ```
 
+> **Índice de Knowledge (cache):** a coleção do ChromaDB é endereçada pelo **conteúdo**
+> das fontes (bytes do arquivo + chunking + modelo de embedding + versões do CrewAI/
+> ChromaDB). Análises que reutilizam a mesma ficha/anexo **reaproveitam o índice já
+> embedado** (sem re-embedar) e conteúdos diferentes nunca compartilham coleção — é
+> isso que impede o vazamento de chunks entre análises. O índice vive no volume
+> `chroma_data` (ver `DOCKER_SETUP.md`), sobrevivendo a recriações de container.
+
 ## 🚀 Como Usar
 
 ### Pré-requisitos
