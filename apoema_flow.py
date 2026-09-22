@@ -100,7 +100,14 @@ class ApoemaFlow(Flow):
                 if knowledge_sources is None:
                     knowledge_sources = []
                 knowledge_sources.append(JSONKnowledgeSource(file_paths=[Path(extra_file)]))
-        agents = create_agents(llm, knowledge_sources=knowledge_sources)
+        agents = create_agents(
+            llm,
+            knowledge_sources=knowledge_sources,
+            # Per-analysis ChromaDB collection: CrewAI's default names it after
+            # the agent role (constant), so chunks from previous analyses leak
+            # into later retrievals (cross-analysis contamination, 2026-09-09).
+            knowledge_collection=output_prefix,
+        )
 
         # Prepare input files based on workflow type
         input_files = {"assessment_data": TextFile(source=assessment_file)}

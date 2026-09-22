@@ -33,6 +33,29 @@ def test_get_embedder_is_ollama():
     embedder = get_embedder()
     assert embedder["provider"] == "ollama"
     assert embedder["config"]["model_name"] == "nomic-embed-text"
+    # chromadb's OllamaEmbeddingFunction defaults to 60s, which a queued embed
+    # outlives while ollama is still generating → "timed out in upsert".
+    assert embedder["config"]["timeout"] > 60
+
+
+def test_index_with_retry_degrades_instead_of_failing(monkeypatch):
+    """Exhausted Knowledge indexing must not take the analysis down with it."""
+    import apoema_agent
+
+    def _boom(*args, **kwargs):
+        raise TimeoutError("timed out in upsert")
+
+    monkeypatch.setattr(apoema_agent, "retry_with_backoff", _boom)
+    apoema_agent._index_with_retry(lambda: None, "Knowledge indexing (probe)")
+
+    indexed = []
+    monkeypatch.setattr(
+        apoema_agent,
+        "retry_with_backoff",
+        lambda fn, **kwargs: indexed.append(fn) or fn(),
+    )
+    apoema_agent._index_with_retry(lambda: "ok", "Knowledge indexing (probe)")
+    assert len(indexed) == 1
 
 
 def test_get_llm_supports_multiple_providers():

@@ -82,17 +82,52 @@ def get_embedder():
         "config": {
             "url": f"{ollama_host}/api/embeddings",
             "model_name": os.getenv("RAG_EMBEDDING_MODEL", "nomic-embed-text"),
+            # chromadb's OllamaEmbeddingFunction defaults to a 60s client
+            # timeout, and CrewAI forwards extra config keys straight to it.
+            # Indexing embeds the assessment while the same ollama is busy
+            # generating a task (or swapping models, which
+            # OLLAMA_MAX_LOADED_MODELS=1 forces), so a queued embed easily
+            # outlives 60s and kills the analysis with "timed out in upsert"
+            # (2026-09-11, analysis 116). 900s covers a full slow generation.
+            "timeout": int(os.getenv("OLLAMA_EMBED_TIMEOUT", "900")),
         },
     }
 
 
-def create_agents(llm, knowledge_sources=None):
+def _index_with_retry(index_fn, label: str) -> None:
+    """Index the Knowledge base, degrading instead of failing the analysis.
+
+    Indexing embeds the sources through the Ollama embedder, which sometimes
+    waits behind a long generation or the model swap that
+    OLLAMA_MAX_LOADED_MODELS=1 forces. Retrieval is an enhancement — the
+    assessment still reaches the tasks through input_files — so an exhausted
+    retry continues without the base rather than failing the whole run
+    (observed 2026-09-11, analysis 116).
+    """
+    try:
+        retry_with_backoff(index_fn, label=label)
+    except Exception as e:  # noqa: BLE001 - degrade, never fail the analysis
+        print(
+            f"⚠️  {label} failed after retries — continuing without retrieval "
+            f"({type(e).__name__}: {str(e)[:120]})"
+        )
+
+
+def create_agents(llm, knowledge_sources=None, knowledge_collection=None):
     """Create and return all agents.
 
     `knowledge_sources` (CrewAI Knowledge sources, e.g. JSONKnowledgeSource) are
     attached to the data_reader agent so CrewAI automatically retrieves relevant
     chunks of the assessment file and injects them into the task prompt — the
     reliable alternative to tool-calling RAG.
+
+    `knowledge_collection` (optional) scopes the ChromaDB collection to one
+    analysis (e.g. the output prefix). CrewAI's default `set_knowledge()` names
+    the collection after the agent ROLE, which is identical across analyses —
+    chunks from previous runs then leak into every later analysis's retrieval
+    (observed 2026-09-09: a `basic` analysis received anexo+ficha chunks from
+    an older informativo run). Passing a per-analysis collection name isolates
+    the knowledge base.
     """
     embedder = get_embedder()
     data_reader_config = load_agent_prompt("data_reader")
@@ -110,7 +145,28 @@ def create_agents(llm, knowledge_sources=None):
     # task.execute_sync(), so initialize the knowledge base manually. This chunks
     # + embeds the assessment and enables auto-injection in execute_task.
     if knowledge_sources:
-        data_reader.set_knowledge()
+        if knowledge_collection:
+            # Per-analysis collection: wipe leftovers of a previous run of the
+            # SAME analysis (retry/resume) so chunks never duplicate, then index.
+            from crewai.knowledge.knowledge import Knowledge
+
+            data_reader.knowledge = Knowledge(
+                sources=knowledge_sources,
+                embedder=embedder,
+                collection_name=knowledge_collection,
+            )
+            try:
+                data_reader.knowledge.storage._get_client().delete_collection(
+                    collection_name=f"knowledge_{knowledge_collection}"
+                )
+            except Exception:
+                pass  # first run of this analysis: nothing to wipe
+            _index_with_retry(
+                data_reader.knowledge.add_sources,
+                label=f"Knowledge indexing ({knowledge_collection})",
+            )
+        else:
+            _index_with_retry(data_reader.set_knowledge, label="Knowledge indexing")
 
     summarizer_config = load_agent_prompt("summarizer")
     summarizer = Agent(
@@ -319,11 +375,20 @@ def create_tasks(output_prefix, agents, input_files, image_description="", impor
         )
         task7_desc += important_section
         if image_description:
+            # phi4-mini refuses to work when the prompt mentions an
+            # "imagem"/"anexo"/"multimodal" it doesn't have (observed
+            # 2026-09-09: analyses 101-103 answered with "hypothetical"
+            # JSON or asked for the data again). Present the vision output
+            # as plain technical data and forbid non-answers.
             task7_desc += (
-                "\n\nOBSERVAÇÃO: a imagem não está anexada (modelo local sem "
-                "suporte multimodal). Use esta descrição visual obtida pela "
-                "ferramenta de visão para a interpretação visual:\n"
-                f"{image_description}"
+                "\n\nDADOS TÉCNICOS DA VISUALIZAÇÃO (levantamento visual "
+                "completo do gráfico, já realizado e fornecido abaixo):\n"
+                f"{image_description}\n\n"
+                "Use estes dados como a representação visual integral do "
+                "gráfico ao cumprir todos os itens pedidos. Responda com a "
+                "análise real e completa — não peça dados adicionais, não "
+                "mencione limitações de modelo e não produza exemplos "
+                "hipotéticos."
             )
         task7_input_files: dict = {}
         if not image_description:

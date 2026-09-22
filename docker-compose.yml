@@ -71,7 +71,17 @@ services:
     environment:
       OLLAMA_NUM_PARALLEL: 1
       OLLAMA_NUM_GPU: 1
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi4-mini:3.8b}
+      # CrewAI's openai-compatible client does NOT send options.num_ctx, so the
+      # ollama server default (4096) truncated the assessment JSON prompts
+      # (~13K tokens) -> runaway generation -> httpx.ReadTimeout (2026-09-09).
+      # Raise the server-wide default so every request gets a real window.
+      OLLAMA_CONTEXT_LENGTH: 16384
+      # phi4-mini (16K ctx, ~4.9GB) + qwen2.5vl (~3.2GB) cannot coexist in the
+      # 7.65GB Docker VM — loading the vision model killed the llama-server
+      # (signal: killed, OOM) mid png_csv analysis. With MAX_LOADED_MODELS=1
+      # ollama unloads the text model before loading the vision model.
+      OLLAMA_MAX_LOADED_MODELS: 1
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
     networks:
       - apoema_network
@@ -83,7 +93,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: apoema-dramatiq-worker
-    command: dramatiq --verbose tasks
+    command: dramatiq --verbose tasks --processes 2
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
@@ -94,7 +104,7 @@ services:
       DRAMATIQ_BROKER_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
       OLLAMA_HOST: http://ollama:11434
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi4-mini:3.8b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
@@ -187,7 +197,7 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
       OLLAMA_HOST: http://ollama:11434
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi4-mini:3.8b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
       PYTHONUNBUFFERED: 1
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
