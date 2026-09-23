@@ -17,7 +17,7 @@ def get_llm(model: str = "gemini"):
     """Create and return the LLM instance.
 
     Supported providers (see MODEL_ALTERNATIVES_STUDY.md):
-      - 'ollama': local model (OLLAMA_MODEL, default phi4-mini:3.8b)
+      - 'ollama': local model (OLLAMA_MODEL, default qwen2.5:7b)
       - 'gemini': Google Gemini Flash (GEMINI_API_KEY) — recommended, has vision
       - 'openai': OpenAI (OPENAI_API_KEY) — gpt-4o-mini, has vision
       - 'anthropic': Anthropic Claude Haiku (ANTHROPIC_API_KEY) — has vision
@@ -30,7 +30,7 @@ def get_llm(model: str = "gemini"):
         ollama_host = os.getenv(
             "OLLAMA_HOST", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         )
-        ollama_model = os.getenv("OLLAMA_MODEL", "phi4-mini:3.8b")
+        ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
         # Local models are slow (phi4-mini on CPU ≈ 3-5 tok/s), and CrewAI's
         # openai-compatible client defaults to a 600s request timeout — a task
         # needing ~2-3K output tokens would time out mid-generation and restart
