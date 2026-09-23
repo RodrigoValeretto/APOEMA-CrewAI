@@ -41,6 +41,23 @@ Este guia descreve como usar o Docker Compose para executar a aplicação APOEMA
 `conversion` — conversão de documentos PDF/XLSX→JSON via docling; 1 processo,
 volumes `./:/app` + `hf_cache` para os modelos HuggingFace do docling).
 
+> **GPU (NVIDIA, opcional):** o serviço `ollama` aceita um override separado
+> (`docker-compose.gpu.yml`) que reserva um device NVIDIA para o container —
+> sem ele o ollama roda em CPU mesmo com placa instalada. Máquinas sem GPU
+> **não** devem usar o override (o Docker falha ao selecionar o driver nvidia).
+> Uso:
+> ```bash
+> # GPU machine (nvidia-container-toolkit instalado):
+> docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+> # ou: make docker-up-gpu
+>
+> # CPU-only machine (default, nada muda):
+> docker compose up -d --build
+> # ou: make docker-up
+> ```
+> O default de `OLLAMA_MODEL` no compose é `qwen2.5:7b` (4.7GB — cabe numa
+> RTX 4060 8GB). Em CPU-only, troque por `qwen2.5:3b` (1.9GB) via `.env`.
+
 O `dramatiq_worker` monta ainda o volume **`chroma_data`** em
 `/root/.local/share/app`, onde o ChromaDB guarda o **índice de Knowledge**
 (chunks embedados das fichas/anexos). Sem ele, toda recriação de container
