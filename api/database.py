@@ -1,7 +1,7 @@
 """
 Database operations for APOEMA API
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 import psycopg
 from psycopg.rows import dict_row
@@ -179,6 +179,73 @@ def get_all_analyses(
 
     except psycopg.Error as e:
         raise DatabaseError(f"Failed to get analyses: {str(e)}")
+
+
+def get_stale_processing_analyses(
+    older_than_seconds: int,
+) -> List[Dict[str, Any]]:
+    """
+    Find analyses stuck in 'processing' (or 'queued') for longer than a threshold.
+
+    These are zombies: a crashed/stalled worker left the row in 'processing'
+    with no live consumer, blocking the FIFO gate forever (failed/completed
+    do not block, but processing/queued do).
+
+    Args:
+        older_than_seconds: Minimum age of the status (based on updated_at)
+
+    Returns:
+        List of analysis dicts (id, type, status, updated_at) that are stale
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT id, type, status, updated_at
+                    FROM analysis
+                    WHERE status IN ('processing', 'queued')
+                      AND updated_at < %s
+                    ORDER BY id
+                    """,
+                    (datetime.now() - timedelta(seconds=older_than_seconds),),
+                )
+                return [dict(r) for r in cur.fetchall()]
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to find stale analyses: {str(e)}")
+
+
+def kill_zombie_analysis(analysis_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Mark a zombie analysis as 'failed' so it no longer blocks the FIFO gate.
+
+    Only transitions from 'processing'/'queued' (the states that block the
+    gate). Returns the analysis row if it was a zombie and got killed, or None
+    if the analysis is not in a zombie state (nothing to do).
+
+    Args:
+        analysis_id: ID of the analysis to kill
+
+    Returns:
+        The killed analysis row (dict) or None if not a zombie
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    UPDATE analysis
+                    SET status = 'failed', updated_at = %s
+                    WHERE id = %s AND status IN ('processing', 'queued')
+                    RETURNING id, type, status, updated_at
+                    """,
+                    (datetime.now(), analysis_id),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return dict(row) if row else None
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to kill zombie analysis: {str(e)}")
 
 
 def update_analysis_status(analysis_id: int, new_status: str) -> None:
