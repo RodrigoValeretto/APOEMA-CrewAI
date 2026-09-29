@@ -14,6 +14,8 @@ from fastapi import (
 from fastapi.responses import FileResponse, JSONResponse
 from datetime import datetime
 from typing import Optional
+import asyncio
+import contextlib
 import os
 
 from config import get_config
@@ -77,6 +79,11 @@ from .validators import (
 )
 from .middleware import setup_middleware
 from . import database, file_manager
+from zombie_kill import (
+    kill_zombie_analysis as zombie_kill_single,
+    cleanup_zombies as zombie_cleanup_all,
+    run_watchdog_once,
+)
 from tasks import (
     enqueue_analysis_for_sequential_processing,
 )
@@ -85,11 +92,57 @@ from conversion_tasks import convert_informativo_document
 
 config = get_config()
 
+# Module logger (used by the zombie watchdog)
+import logging
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Zombie watchdog: periodic automatic cleanup of analyses stuck in
+# 'processing'/'queued' (zombies that block the FIFO gate forever).
+# ---------------------------------------------------------------------------
+_WATCHDOG_INTERVAL = int(os.getenv("ZOMBIE_WATCHDOG_INTERVAL", "1800"))  # seconds
+_WATCHDOG_THRESHOLD = int(os.getenv("ZOMBIE_WATCHDOG_THRESHOLD", "1800"))  # seconds
+
+
+async def _zombie_watchdog_loop():
+    """Background loop: every `_WATCHDOG_INTERVAL` seconds, kill stale zombies."""
+    if _WATCHDOG_INTERVAL <= 0:
+        logger.info("Zombie watchdog disabled (ZOMBIE_WATCHDOG_INTERVAL=0)")
+        return
+    logger.info(
+        "Zombie watchdog started (interval=%ss, threshold=%ss)",
+        _WATCHDOG_INTERVAL,
+        _WATCHDOG_THRESHOLD,
+    )
+    while True:
+        await asyncio.sleep(_WATCHDOG_INTERVAL)
+        try:
+            result = run_watchdog_once(older_than_seconds=_WATCHDOG_THRESHOLD)
+            if result.get("killed"):
+                logger.info(
+                    "Watchdog killed zombies: %s (purged %d queue messages)",
+                    result["killed"],
+                    result.get("purged_messages", 0),
+                )
+        except Exception as e:  # never let the loop die
+            logger.exception("Zombie watchdog pass failed: %s", e)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start the zombie watchdog background task with the app."""
+    task = asyncio.create_task(_zombie_watchdog_loop())
+    yield
+    task.cancel()
+
+
 # Create FastAPI app
 app = FastAPI(
     title="APOEMA API",
     description="API for APOEMA - AI-powered assessment analysis",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Wire CORS, request logging, and generic exception handlers
@@ -492,6 +545,58 @@ async def retry_analysis_endpoint(analysis_id: int):
 
     except ApoemaException:
         raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/analysis/{analysis_id}/zombie-kill",
+    tags=["Analysis"],
+)
+async def zombie_kill_endpoint(analysis_id: int):
+    """
+    Kill a single zombie analysis.
+
+    A zombie is an analysis stuck in 'processing'/'queued' whose worker died
+    or stalled (e.g. runaway generation). Zombies block the FIFO gate forever.
+    This marks it 'failed' and purges the RabbitMQ queues so any orphaned
+    message stops looping (the resurrection trap).
+
+    Returns 200 with {"killed": true, ...} if the analysis was a zombie, or
+    200 with {"killed": false, ...} if it was not in a zombie state.
+    """
+    try:
+        result = zombie_kill_single(analysis_id)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/zombies/cleanup",
+    tags=["Analysis"],
+)
+async def zombie_cleanup_endpoint(
+    older_than_seconds: int = Query(1800, ge=60, description="Minimum age (seconds) of a 'processing'/'queued' analysis to be considered a zombie"),
+):
+    """
+    Kill every zombie analysis older than `older_than_seconds`.
+
+    Marks all stale 'processing'/'queued' analyses as 'failed' and purges the
+    RabbitMQ queues. Useful both manually and as the target of a scheduled
+    cleanup (cron/watchdog).
+
+    Default threshold: 1800s (30 min) — the longest observed legitimate run.
+    """
+    try:
+        result = zombie_cleanup_all(older_than_seconds=older_than_seconds)
+        return result
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
