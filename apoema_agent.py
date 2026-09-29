@@ -36,11 +36,19 @@ def get_llm(model: str = "gemini"):
         # needing ~2-3K output tokens would time out mid-generation and restart
         # from zero forever. Allow a generous per-request timeout for ollama.
         ollama_timeout = float(os.getenv("OLLAMA_TIMEOUT", "1800"))
+        # Without a cap on generated tokens, ollama generates until EOS or the
+        # context window fills — a degenerate run (observed: task 9 emitting
+        # 49K+ tokens with repeated context shifts on the GPU box) stalls the
+        # worker mid-response and leaves the analysis stuck in 'processing'
+        # (a zombie). Legitimate task outputs are ~1-2K tokens, so a generous
+        # cap stops runaway generation without truncating real analyses.
+        ollama_max_tokens = int(os.getenv("OLLAMA_MAX_TOKENS", "2048"))
         return LLM(
             model=f"ollama/{ollama_model}",
             base_url=ollama_host,
             temperature=0.4,
             timeout=ollama_timeout,
+            max_tokens=ollama_max_tokens,
         )
 
     # Hosted providers: (crewai model string, env var for the API key).
