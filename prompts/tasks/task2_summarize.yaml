@@ -7,6 +7,8 @@ description: |
   2. **Gargalos de Nota:** Quais critérios são os maiores "detratores" de nota se não forem atendidos?
   3. **Alvos de Excelência:** O que o programa precisa demonstrar para atingir os níveis 6 e 7 (internacionalização, impacto, etc.)?
 
+  REGRA DE FIDELIDADE (obrigatória): reporte APENAS métricas e percentuais que estejam explicitamente na ficha de avaliação. Se a ficha NÃO declara um percentual exato para um quesito (ex.: "% mínimo de docentes permanentes", "índice de citações", "taxa de egressos"), NÃO invente um número — descreva o critério qualitativamente como a ficha o faz. Números inventados que parecem precisos (85%, 60%, 1000 citações) são piores do que a ausência do número.
+
   A linguagem deve ser executiva, técnica (usando termos da CAPES/Sucupira) e extremamente organizada em Markdown.
 
 expected_output: |
