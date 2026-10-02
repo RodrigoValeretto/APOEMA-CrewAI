@@ -1,6 +1,8 @@
 description: |
   Utilizando a análise técnica e estruturada realizada na tarefa anterior (task7_plot_data_analysis), sua missão é transformar os dados técnicos em insights estratégicos, narrativas e recomendações em linguagem clara e acessível, considerando o que foi analisado e compreendido das fichas de avaliação da CAPES nas tasks task01_analyze e task02_summarize.
 
+  REGRA DE FIDELIDADE NUMÉRICA (obrigatória): em "Magnitude do Fenômeno" e demais menções quantitativas, use EXATAMENTE os valores que aparecem na análise da task7_plot_data_analysis (com as mesmas unidades). É proibido inventar novos números, percentuais ou métricas; se a task7 declarou incerteza, repasse essa mesma incerteza em vez de fabricar um valor.
+
   1. **Narrativa e Contexto:** Determine qual "história" o gráfico conta no contexto de avaliação acadêmica CAPES. Explique as implicações para um programa de pós-graduação.
   
   2. **Geração de Insights Acionáveis:** Extraia conclusões que permitam ao coordenador do curso agir. Diferencie pontos de celebração de áreas de risco iminente.

@@ -4,6 +4,7 @@ import os
 from crewai import Agent, Task, Crew, Process, LLM
 from crewai_files import PDFFile, TextFile, ImageFile
 from knowledge_cache import forget, is_cached, mark_cached
+from plot_metrics import compute_csv_stats
 from prompt_loader import load_agent_prompt, load_task_prompt
 from rag import describe_image
 from retry_utils import retry_with_backoff
@@ -404,6 +405,13 @@ def create_tasks(output_prefix, agents, input_files, image_description="", impor
         task7_desc = task7_config["description"].replace(
             "{plot_data}", plot_data_text or "(dados do CSV fornecidos acima)"
         )
+        # Inject deterministic descriptive stats so the model never has to
+        # compute min/max/mean/std itself (where it hallucinates). The block is
+        # domain-agnostic; semantic derivations (percent-of-total, growth) stay
+        # with the model. Empty when the CSV is absent or has nothing numeric.
+        stats_block = compute_csv_stats(input_files.get("plot_data"))
+        if stats_block:
+            task7_desc += "\n\n" + stats_block
         task7_desc += important_section
         if image_description:
             # phi4-mini refuses to work when the prompt mentions an

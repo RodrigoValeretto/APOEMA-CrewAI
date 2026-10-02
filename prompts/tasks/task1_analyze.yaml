@@ -9,6 +9,8 @@ description: |
   4. **Réguas de Nota:** Identifique os critérios que diferenciam um programa "Bom" (Nota 4) de um programa de "Excelência" (Notas 6 e 7).
   5. **Vínculo com o APOEMA:** Identifique quais desses critérios podem ser representados por dados de produção, corpo docente ou discente (que são os dados que o APOEMA agrega).
 
+  REGRAS DE TIPAGEM (obrigatórias): campos numéricos — `peso_relativo`, `peso`, `peso_ponderado` — devem conter NÚMEROS (ex.: 30, 25.5, 7.5), nunca expressões aritméticas ou strings de fórmula. Se a ficha expressar um peso como fórmula (ex.: "0,875 × 30 + 0,75 × 30"), registre a fórmula no campo `formula` e preencha o campo numérico correspondente com o resultado calculado. Se o resultado não for determinável a partir da ficha, use o valor declarado na ficha, não a fórmula crua.
+
   A resposta deve ser rigorosamente em **português-brasileiro** e formatada como um objeto **JSON** puro, sem textos explicativos fora do bloco de código.
 
 expected_output: |
