@@ -4,6 +4,14 @@ description: |
   DADOS TABULARES (CSV):
   {plot_data}
 
+  REGRAS DE PRECISÃO NUMÉRICA (obrigatórias para TODO gráfico/CSV):
+
+  - O CSV é a fonte de verdade para TODOS os números. O levantamento visual serve apenas para tipo de gráfico, eixos, rótulos, legenda e layout.
+  - Se um bloco "MÉTRICAS CALCULADAS" estiver presente nesta mensagem, use EXATAMENTE os valores dele para `metricas_estimadas` (minimo, maximo, media, mediana, desvio_padrao) — não os recalcule nem os altere. Para cada métrica, informe também a unidade correta (% ou absoluto), conforme o campo da coluna.
+  - Distinga explicitamente VALORES ABSOLUTOS (contagens) de PERCENTUAIS. Percentuais derivados (ex.: permanente / total × 100) devem ser calculados a partir dos valores brutos do CSV — nunca copiados de estimativas visuais ou de rótulos do gráfico.
+  - Calcule APENAS o que o bloco não fornecer: percentuais, razões ou variações semânticas. É proibido estimar, arredondar grosseiramente ou inventar números; se o dado não permitir calcular com certeza, declare isso em `descricao_comportamento` em vez de chutar.
+  - `outliers_identificados` e `descricao_comportamento` devem citar os valores reais correspondentes (identificador da linha + número) retirados do CSV.
+
   1. **Interpretação Visual:** Analise o levantamento visual do gráfico para entender o tipo de gráfico, layout, cores, escalas, eixos e mensagem visual principal que o gráfico comunica.
 
   2. **Análise dos Dados CSV:** Examine os dados brutos do CSV acima para validar o que é mostrado no gráfico, identificar padrões, tendências e anomalias.
