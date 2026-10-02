@@ -13,7 +13,7 @@ pull_model_in_background() {
 }
 
 # Pull LLM model (tool-calling capable; override via OLLAMA_MODEL env)
-pull_model_in_background "${OLLAMA_MODEL:-qwen2.5:7b}" &
+pull_model_in_background "${OLLAMA_MODEL:-qwen2.5:14b}" &
 
 # Pull vision model for chart analysis (override via OLLAMA_VISION_MODEL env)
 pull_model_in_background "${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}" &
