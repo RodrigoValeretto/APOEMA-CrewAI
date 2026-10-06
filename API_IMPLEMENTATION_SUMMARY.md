@@ -201,11 +201,14 @@ Cliente faz polling:
 ### Analysis Management
 - **POST /api/analysis**
   - Body: `{assessment_file | assessment_file_id | assessment_file_url | informativo_id,
-    pdf_path, png_path, csv_path, model, important_programs[]}`
+    pdf_path, png_path, csv_path, model, important_programs[], report_reference?}`
   - `informativo_id` (alternativo ao assessment): usa a ficha convertida mais recente
     do informativo como `assessment_file` e anexos/adendos convertidos como fontes de
     Knowledge (retrieval) — campos de assessment são mutuamente exclusivos com ele
-  - Response: `{id, type, status, created_at, informativo_id}` (201 Created)
+  - `report_reference` (opcional): string que agrupa esta análise num relatório;
+    várias imagens de um mesmo relatório compartilham o mesmo `report_reference`
+    para serem recuperadas juntas depois
+  - Response: `{id, type, status, created_at, informativo_id, report_reference}` (201 Created)
   - Cria analysis no BD, envia Dramatiq task
 
 - **GET /api/analysis**
@@ -214,7 +217,7 @@ Cliente faz polling:
   - Paginado, filtrado, ordenado por created_at DESC
 
 - **GET /api/analysis/{analysis_id}**
-  - Response: `{id, type, status, created_at, updated_at, informativo_id, results[...], progress{...}}`
+  - Response: `{id, type, status, created_at, updated_at, informativo_id, report_reference, results[...], progress{...}}`
   - Detalhes completos com todos os resultados de tasks
 
 - **GET /api/analysis/{analysis_id}/results**
@@ -225,6 +228,18 @@ Cliente faz polling:
 - **DELETE /api/analysis/{analysis_id}**
   - Response: `{message: "Analysis deleted successfully", id: 42}`
   - Hard delete (cascata deleta results)
+
+### Reports (agregação de análises por relatório)
+- **GET /api/reports/{report_reference}**
+  - Response: `{report_reference, total, analyses[]}`
+  - Agrega todas as análises que compartilham o mesmo `report_reference` num único
+    array. Cada item traz `{id, type, status, created_at, important_programs,
+    informativo_id, assessment_path, pdf_path, png_path, csv_path, results[]}` — os
+    campos `*_path` permitem relacionar cada análise à imagem/arquivo de origem
+    (via `analysis_file_mapping`, a mesma fonte que o retry usa para reconstruir
+    inputs). Ordenado por ordem de criação (`id`).
+  - Retorna `{total: 0, analyses: []}` (não 404) quando nenhuma análise casa com a
+    referência — um relatório recém-criado simplesmente ainda não tem análises.
 
 ### File Management
 - **POST /api/files/assessment**
@@ -266,6 +281,7 @@ CREATE TABLE analysis (
     id SERIAL PRIMARY KEY,
     type VARCHAR(100) NOT NULL,           -- pdf, png_csv, basic
     status VARCHAR(50) DEFAULT 'pending', -- pending, processing, completed, failed
+    report_reference VARCHAR(255),        -- agrupa análises num relatório (V8, indexada)
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );

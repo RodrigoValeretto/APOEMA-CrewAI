@@ -583,6 +583,6 @@ curl -X POST http://localhost:8000/api/analysis \
 
 ---
 
-**Última atualização:** Setembro 2026 (feature json-converter)
-**Versão:** 2.0.0
+**Última atualização:** Outubro 2026 (feature report-reference)
+**Versão:** 2.1.0
 **Status:** Pronto para testes ✅
