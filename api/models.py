@@ -91,6 +91,15 @@ class AnalysisRequest(BaseModel):
         ),
         examples=[1],
     )
+    report_reference: Optional[str] = Field(
+        None,
+        description=(
+            "Optional identifier that groups this analysis into a report. A report "
+            "is composed of several images, each analyzed independently; all analyses "
+            "that share a report_reference can later be fetched together."
+        ),
+        examples=["relatorio-2025-cc"],
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -102,7 +111,7 @@ class AnalysisRequest(BaseModel):
         }
     }
 
-    @validator("assessment_file", "pdf_path", "png_path", "csv_path", "assessment_file_url", "pdf_url", "png_url", "csv_url", pre=True)
+    @validator("assessment_file", "pdf_path", "png_path", "csv_path", "assessment_file_url", "pdf_url", "png_url", "csv_url", "report_reference", pre=True)
     def empty_str_to_none(cls, v):
         if v == "":
             return None
@@ -170,6 +179,10 @@ class AnalysisResponse(BaseModel):
     informativo_id: Optional[int] = Field(
         None,
         description="Informativo (CAPES area corpus) that sourced this analysis, if any",
+    )
+    report_reference: Optional[str] = Field(
+        None,
+        description="Report identifier this analysis belongs to, if any",
     )
 
     model_config = {
@@ -243,6 +256,10 @@ class AnalysisDetailResponse(BaseModel):
     informativo_id: Optional[int] = Field(
         None,
         description="Informativo (CAPES area corpus) that sourced this analysis, if any",
+    )
+    report_reference: Optional[str] = Field(
+        None,
+        description="Report identifier this analysis belongs to, if any",
     )
     results: List[TaskResult] = Field(default_factory=list)
     progress: ProgressInfo
@@ -327,6 +344,49 @@ class AnalysisListResponse(BaseModel):
             }
         }
     }
+
+
+class ReportAnalysisItem(BaseModel):
+    """One analysis belonging to a report, with the input paths that let the
+    caller map each analysis back to the image (or PDF) it was produced from."""
+
+    id: int = Field(..., description="Analysis ID")
+    type: str = Field(..., description="Analysis type (pdf, png_csv, basic)")
+    status: str = Field(..., description="Current analysis status")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    important_programs: Optional[List[str]] = Field(
+        None,
+        description="Program identifiers marked as important by the user",
+    )
+    informativo_id: Optional[int] = Field(
+        None,
+        description="Informativo that sourced this analysis, if any",
+    )
+    assessment_path: Optional[str] = Field(
+        None,
+        description="Path of the assessment JSON fed to this analysis",
+    )
+    pdf_path: Optional[str] = Field(
+        None,
+        description="Path of the PDF this analysis was run on (pdf workflow)",
+    )
+    png_path: Optional[str] = Field(
+        None,
+        description="Path of the plot image this analysis was run on (png_csv workflow)",
+    )
+    csv_path: Optional[str] = Field(
+        None,
+        description="Path of the CSV data this analysis was run on (png_csv workflow)",
+    )
+    results: List[TaskResult] = Field(default_factory=list)
+
+
+class ReportResponse(BaseModel):
+    """Aggregated analyses for a single report_reference."""
+
+    report_reference: str = Field(..., description="The report identifier queried")
+    total: int = Field(..., description="Number of analyses in this report")
+    analyses: List[ReportAnalysisItem] = Field(default_factory=list)
 
 
 class FileUploadResponse(BaseModel):
