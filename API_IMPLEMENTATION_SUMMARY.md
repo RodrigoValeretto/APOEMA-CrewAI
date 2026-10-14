@@ -7,7 +7,7 @@ Implementação completa de uma API FastAPI integrada com CrewAI, Dramatiq e Pos
 **Linhas de código adicionadas:** ~3.500+
 **Arquivos criados:** 15
 **Arquivos modificados:** 4
-**Total de endpoints:** 13
+**Total de endpoints:** 25
 
 ---
 
@@ -241,6 +241,20 @@ Cliente faz polling:
   - Retorna `{total: 0, analyses: []}` (não 404) quando nenhuma análise casa com a
     referência — um relatório recém-criado simplesmente ainda não tem análises.
 
+### Zombie cleanup (recuperação automática de análises presas)
+- **POST /api/analysis/{analysis_id}/zombie-kill**
+  - Response: `{killed: true|false, analysis_id, ...}`
+  - Marca uma análise presa em `processing`/`queued` como `failed` e purga as filas
+    RabbitMQ (`default`, `default.DQ`, `default.XQ`) — o re-envio da mensagem órfã
+    ressuscitaria a análise de volta para `processing`.
+- **POST /api/zombies/cleanup?older_than_seconds=1800**
+  - Response: resumo das análises mortas + nº de mensagens purgadas
+  - Mata TODAS as análises presas há mais que `older_than_seconds`. Um **watchdog**
+    dentro do app (FastAPI lifespan) executa essa limpeza a cada
+    `ZOMBIE_WATCHDOG_INTERVAL` (default 1800 s; `0` desativa) para linhas presas há
+    mais de `ZOMBIE_WATCHDOG_THRESHOLD` (default 1800 s). `failed` não bloqueia a
+    fila; `processing`/`queued` bloqueiam — ver `zombie_kill.py`.
+
 ### File Management
 - **POST /api/files/assessment**
 - **POST /api/files/pdf**
@@ -320,7 +334,9 @@ CREATE TABLE analysis_files (
 > **Nota:** o schema acima reflete a fase V2. Migrations posteriores: **V3**
 > (vínculo analysis↔files movido para `analysis_file_mapping`; `analysis_files`
 > deixou de ter `analysis_id`), **V4** (dedup por URL), **V5** (`analysis.model`),
-> **V6** (`analysis.important_programs` TEXT[]) e **V7** (informativos).
+> **V6** (`analysis.important_programs` TEXT[]), **V7** (informativos) e
+> **V8** (`analysis.report_reference` VARCHAR(255) indexado — agrupa análises
+> num relatório, feature report-reference).
 
 ### Tabelas V7: informativos + informativo_documents (conversão de documentos)
 ```sql
@@ -531,7 +547,7 @@ T=35.5s: Client GET /api/analysis/42
 ## ✨ Recursos Implementados
 
 ✅ **Core API**
-- [x] 21 endpoints HTTP RESTful (análises + arquivos + informativos)
+- [x] 25 endpoints HTTP RESTful (análises + arquivos + informativos + relatórios + zombie cleanup)
 - [x] Validação de entrada robusta
 - [x] Error handling estruturado
 - [x] CORS middleware
@@ -545,9 +561,19 @@ T=35.5s: Client GET /api/analysis/42
 - [x] Análise por `informativo_id`: ficha convertida = assessment; anexos = Knowledge
 - [x] Retry de análise reconstrói anexos (file_type `anexo` agrupado em lista)
 
+✅ **Report reference (agregação de análises por relatório — V8)**
+- [x] `report_reference` opcional no `POST /api/analysis` agrupa análises num relatório
+- [x] `GET /api/reports/{report_reference}` agrega as análises com seus `*_path`
+- [x] Retorno vazio `{total: 0, analyses: []}` quando nada casa (não 404)
+
+✅ **Zombie cleanup (recuperação de análises presas)**
+- [x] `POST /api/analysis/{id}/zombie-kill` e `POST /api/zombies/cleanup`
+- [x] Watchdog automático no app (FastAPI lifespan, `ZOMBIE_WATCHDOG_*`)
+- [x] Marca `failed` + purga filas RabbitMQ (evita a armadilha da ressurreição)
+
 ✅ **Database Integration**
 - [x] PostgreSQL com psycopg3
-- [x] Migrations com Flyway
+- [x] Migrations com Flyway (V1–V8)
 - [x] CRUD completo
 - [x] Indexes para performance
 - [x] Cascade deletes

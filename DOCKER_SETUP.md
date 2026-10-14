@@ -37,9 +37,10 @@ Este guia descreve como usar o Docker Compose para executar a aplicação APOEMA
 ```
 
 **Serviços atuais:** `postgres`, `rabbitmq`, `ollama`, `flyway`, `app` (FastAPI :8000),
-`dramatiq_worker` (fila `default` — análises) e **`converter_worker`** (fila
-`conversion` — conversão de documentos PDF/XLSX→JSON via docling; 1 processo,
-volumes `./:/app` + `hf_cache` para os modelos HuggingFace do docling).
+`dramatiq_worker` (fila `default` — análises; **2 processos**, o gate FIFO já
+serializa o processamento) e **`converter_worker`** (fila `conversion` — conversão de
+documentos PDF/XLSX→JSON via docling; 1 processo, volumes `./:/app` + `hf_cache` para
+os modelos HuggingFace do docling).
 
 O `dramatiq_worker` monta ainda o volume **`chroma_data`** em
 `/root/.local/share/app`, onde o ChromaDB guarda o **índice de Knowledge**
@@ -212,8 +213,12 @@ python main.py --help
 | Coluna | Tipo | Descrição |
 |--------|------|-----------|
 | id | SERIAL | ID único da análise |
-| type | VARCHAR(100) | Tipo de análise (ex: 'report_analysis') |
+| type | VARCHAR(100) | Tipo de análise (`basic`, `png_csv`, `pdf`) |
 | status | VARCHAR(50) | Status (pending, processing, completed, failed) |
+| model | VARCHAR(50) | Modelo usado (V5) |
+| important_programs | TEXT[] | Siglas destacadas (V6) |
+| informativo_id | INTEGER | Proveniência do informativo (V7) |
+| report_reference | VARCHAR(255) | Agrupa análises num relatório (V8, indexada) |
 | created_at | TIMESTAMP | Data de criação |
 | updated_at | TIMESTAMP | Data de última atualização |
 
@@ -306,8 +311,10 @@ Veja `.env.example` para lista completa de variáveis configuráveis:
 
 - Database: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
 - RabbitMQ: `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`
-- LLM APIs: `GEMINI_API_KEY`, `OPENAI_API_KEY`
-- Aplicação: `APP_PORT`, `PYTHONUNBUFFERED`
+- LLM APIs: `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`
+- Ollama: `OLLAMA_MODEL` (default `qwen2.5:3b`), `OLLAMA_VISION_MODEL`, `OLLAMA_CONTEXT_LENGTH`, `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_MAX_TOKENS` (cap de geração, default 2048), `OLLAMA_TIMEOUT`, `OLLAMA_VISION_MAX_TOKENS`, `OLLAMA_EMBED_TIMEOUT`, `RAG_EMBEDDING_MODEL`
+- Zombie watchdog: `ZOMBIE_WATCHDOG_INTERVAL` (default 1800 s, `0` desativa), `ZOMBIE_WATCHDOG_THRESHOLD` (default 1800 s)
+- Aplicação: `APP_PORT`, `PYTHONUNBUFFERED`, `DEFAULT_MODEL`
 
 ## Recursos
 
