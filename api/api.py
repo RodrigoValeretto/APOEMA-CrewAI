@@ -47,6 +47,8 @@ from .models import (
     InformativoListResponse,
     InformativoDocumentResponse,
     InformativoDocumentListResponse,
+    ReportResponse,
+    ReportAnalysisItem,
 )
 from .constants import (
     AnalysisType,
@@ -396,6 +398,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             model=request.model,
             important_programs=request.important_programs,
             informativo_id=request.informativo_id,
+            report_reference=request.report_reference,
         )
 
         # Collect all file IDs for mapping (both downloaded and passed as reference)
@@ -448,6 +451,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             created_at=datetime.now(),
             important_programs=request.important_programs,
             informativo_id=request.informativo_id,
+            report_reference=request.report_reference,
         )
 
     except ApoemaException:
@@ -657,6 +661,7 @@ async def get_analysis_endpoint(analysis_id: int):
             updated_at=analysis["updated_at"],
             important_programs=analysis.get("important_programs") or None,
             informativo_id=analysis.get("informativo_id"),
+            report_reference=analysis.get("report_reference"),
             results=task_results,
             progress=progress,
         )
@@ -718,6 +723,77 @@ async def list_analyses_endpoint(
             skip=skip,
             limit=limit,
             items=items,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.get(
+    "/api/reports/{report_reference}",
+    response_model=ReportResponse,
+    tags=["Analysis"],
+)
+async def get_report_endpoint(report_reference: str):
+    """
+    Aggregate every analysis that belongs to a report (shared report_reference).
+
+    A report is composed of several images, each analyzed independently with the
+    same report_reference. This endpoint returns all those analyses in a single
+    array, each carrying its input paths (png/csv/pdf/assessment) so the caller
+    can map each analysis back to the image it was produced from.
+
+    Returns an empty analyses array (not an error) when no analysis matches the
+    reference — a fresh report simply has no analyses yet.
+    """
+    try:
+        analyses = database.get_analyses_by_report(report_reference)
+
+        items = []
+        for a in analyses:
+            # Input paths come from the analysis_file_mapping (the same source
+            # the retry endpoint uses to rebuild inputs), so the caller can
+            # relate each analysis to the image it was run on.
+            files = database.get_analysis_files(a["id"])
+            paths = {}
+            for f in files:
+                if f["file_type"] not in paths:
+                    paths[f["file_type"]] = f["file_path"]
+
+            results = database.get_analysis_results(a["id"])
+            task_results = [
+                TaskResult(
+                    id=r["id"],
+                    task_name=r["task_name"],
+                    result=r["result"],
+                    created_at=r["created_at"],
+                )
+                for r in results
+            ]
+
+            items.append(
+                ReportAnalysisItem(
+                    id=a["id"],
+                    type=a["type"],
+                    status=a["status"],
+                    created_at=a["created_at"],
+                    important_programs=a.get("important_programs") or None,
+                    informativo_id=a.get("informativo_id"),
+                    assessment_path=paths.get(FileType.ASSESSMENT.value),
+                    pdf_path=paths.get(FileType.PDF.value),
+                    png_path=paths.get(FileType.PNG.value),
+                    csv_path=paths.get(FileType.CSV.value),
+                    results=task_results,
+                )
+            )
+
+        return ReportResponse(
+            report_reference=report_reference,
+            total=len(items),
+            analyses=items,
         )
 
     except Exception as e:
