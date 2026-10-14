@@ -1,4 +1,6 @@
 """Tests for the report-reference feature (group analyses into a report)."""
+from fastapi.testclient import TestClient
+
 from api.models import AnalysisRequest, ReportResponse, ReportAnalysisItem
 from api.validators import validate_analysis_request
 
@@ -89,3 +91,50 @@ class TestDatabaseQuery:
         result = database.get_analyses_by_report("rel-x")
         assert [r["id"] for r in result] == [5, 3]
         assert captured["params"] == ("rel-x",)
+
+
+class TestRetryPreservesReportReference:
+    """Retrying a failed analysis must keep its report_reference in the
+    response, matching what the create endpoint echoes."""
+
+    def test_retry_response_carries_report_reference(self, monkeypatch):
+        from datetime import datetime
+
+        from api import api as api_module
+
+        analysis_row = {
+            "id": 9,
+            "type": "basic",
+            "status": "failed",
+            "model": "ollama",
+            "important_programs": None,
+            "informativo_id": None,
+            "report_reference": "relatorio-retry",
+            "created_at": datetime(2026, 10, 14, 12, 0, 0),
+        }
+
+        # A real file on disk so the input-exists guard passes.
+        assessment_path = __file__
+
+        monkeypatch.setattr(
+            api_module.database, "get_analysis", lambda analysis_id: analysis_row
+        )
+        monkeypatch.setattr(
+            api_module.database,
+            "get_analysis_files",
+            lambda analysis_id: [{"file_type": "assessment", "file_path": assessment_path}],
+        )
+        monkeypatch.setattr(
+            api_module.enqueue_analysis_for_sequential_processing,
+            "send",
+            lambda **kwargs: None,
+        )
+
+        # No lifespan context manager: keeps the zombie watchdog from starting.
+        client = TestClient(api_module.app)
+        resp = client.post("/api/analysis/9/retry")
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["report_reference"] == "relatorio-retry"
+        assert body["id"] == 9
