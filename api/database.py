@@ -38,6 +38,7 @@ def create_analysis(
     model: Optional[str] = None,
     important_programs: Optional[List[str]] = None,
     informativo_id: Optional[int] = None,
+    report_reference: Optional[str] = None,
 ) -> int:
     """
     Create a new analysis record
@@ -48,6 +49,7 @@ def create_analysis(
         model: LLM model used for the analysis (stored for retry support)
         important_programs: Program identifiers marked as important by the user
             (Sigla values from the plot CSV); stored for retry support
+        report_reference: Report identifier this analysis belongs to (optional)
 
     Returns:
         analysis_id
@@ -60,8 +62,8 @@ def create_analysis(
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO analysis (type, status, model, important_programs, informativo_id, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO analysis (type, status, model, important_programs, informativo_id, report_reference, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
                     (
@@ -70,6 +72,7 @@ def create_analysis(
                         model,
                         important_programs,
                         informativo_id,
+                        report_reference,
                         datetime.now(),
                         datetime.now(),
                     ),
@@ -100,7 +103,7 @@ def get_analysis(analysis_id: int) -> Dict[str, Any]:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     """
-                    SELECT id, type, status, model, important_programs, informativo_id, created_at, updated_at
+                    SELECT id, type, status, model, important_programs, informativo_id, report_reference, created_at, updated_at
                     FROM analysis
                     WHERE id = %s
                     """,
@@ -114,6 +117,37 @@ def get_analysis(analysis_id: int) -> Dict[str, Any]:
         raise
     except psycopg.Error as e:
         raise DatabaseError(f"Failed to get analysis: {str(e)}")
+
+
+def get_analyses_by_report(report_reference: str) -> List[Dict[str, Any]]:
+    """
+    Get all analyses that belong to a report (shared report_reference).
+
+    Args:
+        report_reference: Report identifier to look up
+
+    Returns:
+        List of analysis records (id, type, status, ...) ordered by id (creation order)
+
+    Raises:
+        DatabaseError: If database operation fails
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT id, type, status, model, important_programs,
+                           informativo_id, report_reference, created_at, updated_at
+                    FROM analysis
+                    WHERE report_reference = %s
+                    ORDER BY id
+                    """,
+                    (report_reference,),
+                )
+                return [dict(row) for row in cur.fetchall()]
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get analyses by report: {str(e)}")
 
 
 def get_all_analyses(

@@ -130,7 +130,8 @@ make run assessment-file=cc_assessment_data.json pdf-file=cc_report.pdf prefix=c
 ## 📖 Next Steps
 
 - Read [README.md](./README.md) for detailed documentation
-- Check [REPORT_ANALYZER_GUIDE.md](./REPORT_ANALYZER_GUIDE.md) for advanced usage
+- Read [API_IMPLEMENTATION_SUMMARY.md](./API_IMPLEMENTATION_SUMMARY.md) for the full HTTP API (analysis, informativos, report-reference, zombie cleanup)
+- Read [TESTING_API.md](./TESTING_API.md) for end-to-end API test cases
 - View generated reports in `output/` directory
 
 ## 🆘 Troubleshooting

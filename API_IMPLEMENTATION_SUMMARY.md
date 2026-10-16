@@ -7,7 +7,7 @@ Implementação completa de uma API FastAPI integrada com CrewAI, Dramatiq e Pos
 **Linhas de código adicionadas:** ~3.500+
 **Arquivos criados:** 15
 **Arquivos modificados:** 4
-**Total de endpoints:** 13
+**Total de endpoints:** 25
 
 ---
 
@@ -201,11 +201,14 @@ Cliente faz polling:
 ### Analysis Management
 - **POST /api/analysis**
   - Body: `{assessment_file | assessment_file_id | assessment_file_url | informativo_id,
-    pdf_path, png_path, csv_path, model, important_programs[]}`
+    pdf_path, png_path, csv_path, model, important_programs[], report_reference?}`
   - `informativo_id` (alternativo ao assessment): usa a ficha convertida mais recente
     do informativo como `assessment_file` e anexos/adendos convertidos como fontes de
     Knowledge (retrieval) — campos de assessment são mutuamente exclusivos com ele
-  - Response: `{id, type, status, created_at, informativo_id}` (201 Created)
+  - `report_reference` (opcional): string que agrupa esta análise num relatório;
+    várias imagens de um mesmo relatório compartilham o mesmo `report_reference`
+    para serem recuperadas juntas depois
+  - Response: `{id, type, status, created_at, informativo_id, report_reference}` (201 Created)
   - Cria analysis no BD, envia Dramatiq task
 
 - **GET /api/analysis**
@@ -214,7 +217,7 @@ Cliente faz polling:
   - Paginado, filtrado, ordenado por created_at DESC
 
 - **GET /api/analysis/{analysis_id}**
-  - Response: `{id, type, status, created_at, updated_at, informativo_id, results[...], progress{...}}`
+  - Response: `{id, type, status, created_at, updated_at, informativo_id, report_reference, results[...], progress{...}}`
   - Detalhes completos com todos os resultados de tasks
 
 - **GET /api/analysis/{analysis_id}/results**
@@ -225,6 +228,32 @@ Cliente faz polling:
 - **DELETE /api/analysis/{analysis_id}**
   - Response: `{message: "Analysis deleted successfully", id: 42}`
   - Hard delete (cascata deleta results)
+
+### Reports (agregação de análises por relatório)
+- **GET /api/reports/{report_reference}**
+  - Response: `{report_reference, total, analyses[]}`
+  - Agrega todas as análises que compartilham o mesmo `report_reference` num único
+    array. Cada item traz `{id, type, status, created_at, important_programs,
+    informativo_id, assessment_path, pdf_path, png_path, csv_path, results[]}` — os
+    campos `*_path` permitem relacionar cada análise à imagem/arquivo de origem
+    (via `analysis_file_mapping`, a mesma fonte que o retry usa para reconstruir
+    inputs). Ordenado por ordem de criação (`id`).
+  - Retorna `{total: 0, analyses: []}` (não 404) quando nenhuma análise casa com a
+    referência — um relatório recém-criado simplesmente ainda não tem análises.
+
+### Zombie cleanup (recuperação automática de análises presas)
+- **POST /api/analysis/{analysis_id}/zombie-kill**
+  - Response: `{killed: true|false, analysis_id, ...}`
+  - Marca uma análise presa em `processing`/`queued` como `failed` e purga as filas
+    RabbitMQ (`default`, `default.DQ`, `default.XQ`) — o re-envio da mensagem órfã
+    ressuscitaria a análise de volta para `processing`.
+- **POST /api/zombies/cleanup?older_than_seconds=1800**
+  - Response: resumo das análises mortas + nº de mensagens purgadas
+  - Mata TODAS as análises presas há mais que `older_than_seconds`. Um **watchdog**
+    dentro do app (FastAPI lifespan) executa essa limpeza a cada
+    `ZOMBIE_WATCHDOG_INTERVAL` (default 1800 s; `0` desativa) para linhas presas há
+    mais de `ZOMBIE_WATCHDOG_THRESHOLD` (default 1800 s). `failed` não bloqueia a
+    fila; `processing`/`queued` bloqueiam — ver `zombie_kill.py`.
 
 ### File Management
 - **POST /api/files/assessment**
@@ -266,6 +295,7 @@ CREATE TABLE analysis (
     id SERIAL PRIMARY KEY,
     type VARCHAR(100) NOT NULL,           -- pdf, png_csv, basic
     status VARCHAR(50) DEFAULT 'pending', -- pending, processing, completed, failed
+    report_reference VARCHAR(255),        -- agrupa análises num relatório (V8, indexada)
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -304,7 +334,9 @@ CREATE TABLE analysis_files (
 > **Nota:** o schema acima reflete a fase V2. Migrations posteriores: **V3**
 > (vínculo analysis↔files movido para `analysis_file_mapping`; `analysis_files`
 > deixou de ter `analysis_id`), **V4** (dedup por URL), **V5** (`analysis.model`),
-> **V6** (`analysis.important_programs` TEXT[]) e **V7** (informativos).
+> **V6** (`analysis.important_programs` TEXT[]), **V7** (informativos) e
+> **V8** (`analysis.report_reference` VARCHAR(255) indexado — agrupa análises
+> num relatório, feature report-reference).
 
 ### Tabelas V7: informativos + informativo_documents (conversão de documentos)
 ```sql
@@ -515,7 +547,7 @@ T=35.5s: Client GET /api/analysis/42
 ## ✨ Recursos Implementados
 
 ✅ **Core API**
-- [x] 21 endpoints HTTP RESTful (análises + arquivos + informativos)
+- [x] 25 endpoints HTTP RESTful (análises + arquivos + informativos + relatórios + zombie cleanup)
 - [x] Validação de entrada robusta
 - [x] Error handling estruturado
 - [x] CORS middleware
@@ -529,9 +561,19 @@ T=35.5s: Client GET /api/analysis/42
 - [x] Análise por `informativo_id`: ficha convertida = assessment; anexos = Knowledge
 - [x] Retry de análise reconstrói anexos (file_type `anexo` agrupado em lista)
 
+✅ **Report reference (agregação de análises por relatório — V8)**
+- [x] `report_reference` opcional no `POST /api/analysis` agrupa análises num relatório
+- [x] `GET /api/reports/{report_reference}` agrega as análises com seus `*_path`
+- [x] Retorno vazio `{total: 0, analyses: []}` quando nada casa (não 404)
+
+✅ **Zombie cleanup (recuperação de análises presas)**
+- [x] `POST /api/analysis/{id}/zombie-kill` e `POST /api/zombies/cleanup`
+- [x] Watchdog automático no app (FastAPI lifespan, `ZOMBIE_WATCHDOG_*`)
+- [x] Marca `failed` + purga filas RabbitMQ (evita a armadilha da ressurreição)
+
 ✅ **Database Integration**
 - [x] PostgreSQL com psycopg3
-- [x] Migrations com Flyway
+- [x] Migrations com Flyway (V1–V8)
 - [x] CRUD completo
 - [x] Indexes para performance
 - [x] Cascade deletes

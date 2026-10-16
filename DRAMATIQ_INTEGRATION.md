@@ -34,7 +34,7 @@ Este guia descreve como integrar Dramatiq com o APOEMA para executar análises d
 
 | Worker | Comando (compose) | Fila | Responsabilidade |
 |---|---|---|---|
-| `dramatiq_worker` (10 processos) | `dramatiq --verbose tasks` | `default` | Enfileiramento FIFO + execução do CrewAI (análises) |
+| `dramatiq_worker` (2 processos) | `dramatiq --verbose tasks --processes 2` | `default` | Enfileiramento FIFO + execução do CrewAI (análises) |
 | `converter_worker` (1 processo) | `dramatiq conversion_tasks -Q conversion --processes 1 --verbose` | `conversion` | Conversão docling de documentos de informativo (PDF/XLSX → JSON) |
 
 - O broker (RabbitMQ) é configurado uma única vez em **`dramatiq_broker.py`**
@@ -429,6 +429,19 @@ docker-compose logs dramatiq_worker | tail -50
 docker-compose exec rabbitmq \
     rabbitmqctl purge_queue apoema
 ```
+
+Análise presa em `processing` (worker morreu/parou no meio) é um **zumbi** que
+bloqueia a fila FIFO. Recuperação automática (endpoints + watchdog no app):
+```bash
+# Mata uma análise específica (marca 'failed' + purga as filas)
+curl -X POST http://localhost:8000/api/analysis/42/zombie-kill
+
+# Mata todas presas há mais de 1800 s
+curl -X POST "http://localhost:8000/api/zombies/cleanup?older_than_seconds=1800"
+```
+O watchdog roda a cada `ZOMBIE_WATCHDOG_INTERVAL` (default 1800 s) sem intervenção.
+A purga das filas é obrigatória — sem ela a mensagem órfã re-entregue ressuscita a
+análise de volta para `processing` quando o worker reinicia.
 
 ### Resultado não salvo no banco
 
