@@ -545,6 +545,7 @@ async def retry_analysis_endpoint(analysis_id: int):
             created_at=analysis["created_at"],
             important_programs=important_programs,
             informativo_id=analysis.get("informativo_id"),
+            report_reference=analysis.get("report_reference"),
         )
 
     except ApoemaException:
