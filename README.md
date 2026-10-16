@@ -490,7 +490,9 @@ file relatorio.pdf  # Deve retornar "PDF document"
 
 ## 📖 Documentação Adicional
 
-- **[REPORT_ANALYZER_GUIDE.md](./REPORT_ANALYZER_GUIDE.md)** - Guia detalhado do agente Report Analyzer
+- **[API_IMPLEMENTATION_SUMMARY.md](./API_IMPLEMENTATION_SUMMARY.md)** - Referência completa da API HTTP (análises, informativos, report-reference, zombie cleanup)
+- **[DOCKER_SETUP.md](./DOCKER_SETUP.md)** - Stack Docker, serviços, volumes e variáveis de ambiente
+- **[TESTING_API.md](./TESTING_API.md)** - Casos de teste end-to-end da API
 - **[CAPES Criteria](https://www.gov.br/capes/)** - Critérios oficiais CAPES
 - **[CrewAI Docs](https://docs.crewai.com)** - Framework multi-agente
 - **[Google Gemini API](https://ai.google.dev/)** - Documentação da API
@@ -529,6 +531,11 @@ Valida se o relatório do programa atende aos padrões CAPES.
 - [x] **Análise PNG+CSV:** Suporte a análise de gráficos PNG com dados CSV (Tasks 7-9)
 - [x] **Dois agentes especializados:** Plot Data Analyst e Plot Insights Generator
 - [x] **Workflow alternativo:** PNG+CSV como alternativa ao PDF
+- [x] **Cache de Knowledge endereçado por conteúdo:** mesmo assessment reutiliza o índice embedado (sem re-embedar)
+- [x] **Cap de saída de texto (Ollama):** `OLLAMA_MAX_TOKENS=2048` impede geração runaway que trava o worker
+- [x] **Zombie cleanup:** endpoints `POST /api/analysis/{id}/zombie-kill` e `POST /api/zombies/cleanup` + watchdog no app
+- [x] **Estatísticas determinísticas do CSV (`plot_metrics.py`):** média/max/mediana reais injetadas na task 7 (anti-alucinação numérica)
+- [x] **Report reference:** `report_reference` agrupa análises de um relatório; `GET /api/reports/{ref}` agrega
 
 ## 🔄 Próximas Melhorias
 

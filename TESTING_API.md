@@ -526,6 +526,48 @@ ab -n 100 -c 10 http://localhost:8000/health
 - [ ] Logs mostram todas operações
 - [ ] Dramatiq worker processa tasks
 - [ ] PostgreSQL armazena resultados
+- [ ] `report_reference` agrupa análises; `GET /api/reports/{ref}` agrega (vazio = `{total: 0, analyses: []}`)
+- [ ] `POST /api/analysis/{id}/zombie-kill` marca `failed` + purga filas
+- [ ] `POST /api/zombies/cleanup` mata zumbis antigos; watchdog desligável (`ZOMBIE_WATCHDOG_INTERVAL=0`)
+
+---
+
+## 🧪 Testando Report Reference (agrupar análises por relatório)
+
+```bash
+# Submete várias imagens do mesmo relatório (mesma report_reference)
+for n in 1 2 3; do
+  curl -X POST http://localhost:8000/api/analysis \
+    -H "Content-Type: application/json" \
+    -d "{\"assessment_file\": \"/app/input/cc_assessment_data.json\", \
+         \"png_path\": \"/app/input/media-docentes.png\", \
+         \"csv_path\": \"/app/input/media-docentes.csv\", \
+         \"model\": \"ollama\", \
+         \"report_reference\": \"relatorio-2025-cc\"}"
+done
+
+# Agrega tudo de volta (ordenado por id; cada item traz assessment/png/csv/pdf_path)
+curl http://localhost:8000/api/reports/relatorio-2025-cc
+# → {"report_reference": "relatorio-2025-cc", "total": 3, "analyses": [...]}
+
+# Referência sem análises retorna vazio, NÃO 404
+curl http://localhost:8000/api/reports/relatorio-inexistente
+# → {"report_reference": "relatorio-inexistente", "total": 0, "analyses": []}
+```
+
+## 🧪 Testando Zombie Cleanup (recuperação de análise presa)
+
+```bash
+# Mata uma análise presa em processing/queued (marca failed + purga filas RabbitMQ)
+curl -X POST http://localhost:8000/api/analysis/42/zombie-kill
+# → {"killed": true, "analysis_id": 42, ...}  (ou {"killed": false, ...} se não era zumbi)
+
+# Mata TODAS as presas há mais de 1800 s
+curl -X POST "http://localhost:8000/api/zombies/cleanup?older_than_seconds=1800"
+
+# O watchdog do app faz isso sozinho a cada ZOMBIE_WATCHDOG_INTERVAL (default 1800 s).
+# Para desligá-lo (testes): ZOMBIE_WATCHDOG_INTERVAL=0 no .env.
+```
 
 ---
 
@@ -583,6 +625,6 @@ curl -X POST http://localhost:8000/api/analysis \
 
 ---
 
-**Última atualização:** Outubro 2026 (feature report-reference)
-**Versão:** 2.1.0
+**Última atualização:** Outubro 2026 (features report-reference, zombie-kill, cap de texto e estatísticas determinísticas do CSV)
+**Versão:** 2.2.0
 **Status:** Pronto para testes ✅
