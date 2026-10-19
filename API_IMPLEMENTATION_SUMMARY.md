@@ -200,11 +200,14 @@ Cliente faz polling:
 
 ### Analysis Management
 - **POST /api/analysis**
-  - Body: `{assessment_file | assessment_file_id | assessment_file_url | informativo_id,
+  - Body: `{assessment_file | assessment_file_id | assessment_file_url | informativo_id | informativo_key,
     pdf_path, png_path, csv_path, model, important_programs[], report_reference?}`
   - `informativo_id` (alternativo ao assessment): usa a ficha convertida mais recente
     do informativo como `assessment_file` e anexos/adendos convertidos como fontes de
     Knowledge (retrieval) — campos de assessment são mutuamente exclusivos com ele
+  - `informativo_key` (chave textual da área, alternativo a `informativo_id`): string
+    curta (slug) que resolve a `informativo_id` — ex. `"computacao"`, `"cb_i"`. Mutuamente
+    exclusivo com `informativo_id` e com as fontes de assessment explícitas
   - `report_reference` (opcional): string que agrupa esta análise num relatório;
     várias imagens de um mesmo relatório compartilham o mesmo `report_reference`
     para serem recuperadas juntas depois
@@ -285,6 +288,22 @@ Cliente faz polling:
 - Conversão concluída grava `uploads/converted/doc_{id}.json` e registra em
   `analysis_files` com `file_type='assessment'` (ficha) ou `'anexo'` (anexo/adendo)
 
+### Fichas (ingestão do Google Drive + de-para)
+- **POST /api/fichas/ingest** — re-roda a ingestão da pasta pública do Drive
+  (`DRIVE_FOLDER_ID`), de forma **idempotente**: enumera, baixa só os PDFs novos
+  (`*_FICHA_*` e `*_ANEXO_FICHA_*`), cria/obtém o informativo por slug e enfileira a
+  conversão; documentos já ingeridos (por `drive_file_id`, V9) são ignorados ou
+  re-enfileirados se estiverem `pending`/`failed`. Response:
+  `{total, downloaded, new_documents, reenqueued, skipped, errors}`. A ingestão também
+  roda automaticamente na subida do app (hook no `lifespan`, gated por
+  `DRIVE_AUTO_INGEST=true`).
+- **GET /api/fichas** — de-para de todas as áreas: cruza o catálogo estático
+  (`api/fichas_catalog.py`: código de filename → nome oficial CAPES → chave) com o
+  estado do banco. Cada item:
+  `{codigo, nome, chave, informativo_id, documento_id, converted_file_id, status,
+  quadrienio, drive_file_id}`. Áreas ainda não ingeridas vêm com ids/status `null`
+  (funciona como painel do que falta ingerir).
+
 ---
 
 ## 🗄️ Schema do Banco de Dados
@@ -334,9 +353,11 @@ CREATE TABLE analysis_files (
 > **Nota:** o schema acima reflete a fase V2. Migrations posteriores: **V3**
 > (vínculo analysis↔files movido para `analysis_file_mapping`; `analysis_files`
 > deixou de ter `analysis_id`), **V4** (dedup por URL), **V5** (`analysis.model`),
-> **V6** (`analysis.important_programs` TEXT[]), **V7** (informativos) e
+> **V6** (`analysis.important_programs` TEXT[]), **V7** (informativos),
 > **V8** (`analysis.report_reference` VARCHAR(255) indexado — agrupa análises
-> num relatório, feature report-reference).
+> num relatório, feature report-reference) e **V9**
+> (`informativo_documents.drive_file_id` VARCHAR(255) com índice UNIQUE parcial —
+> identidade externa do documento no Drive, base da ingestão idempotente).
 
 ### Tabelas V7: informativos + informativo_documents (conversão de documentos)
 ```sql
@@ -354,6 +375,7 @@ CREATE TABLE informativo_documents (
     status VARCHAR(32) NOT NULL DEFAULT 'pending', -- pending|processing|completed|failed
     original_file_id INTEGER REFERENCES analysis_files(id),
     converted_file_id INTEGER REFERENCES analysis_files(id),  -- JSON convertido
+    drive_file_id VARCHAR(255),             -- id do arquivo no Google Drive (V9, UNIQUE parcial)
     error TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

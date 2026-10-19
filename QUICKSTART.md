@@ -239,6 +239,32 @@ The converted JSON is stored at `uploads/converted/doc_{id}.json` and registered
 in `analysis_files` (file_type `assessment` for fichas, `anexo` otherwise), so it
 can also be reused directly via `assessment_file_id`.
 
+## 📄 Ficha ingestion from Google Drive (automatic)
+
+Instead of uploading each ficha by hand, the system can pull the whole public
+CAPES ficha folder and ingest it through the same informativo+conversion pipeline:
+
+```bash
+# 1) (Automatic) set DRIVE_FOLDER_ID + DRIVE_AUTO_INGEST=true in .env — the API
+#    ingests the folder on every startup (idempotent). To re-run on demand:
+curl -X POST http://localhost:8000/api/fichas/ingest
+# -> {"total": 58, "downloaded": 58, "new_documents": 58, "reenqueued": 0, "skipped": 0, "errors": 0}
+
+# 2) List the de-para (filename code -> official name -> textual key -> ids/status)
+curl -s http://localhost:8000/api/fichas
+# -> {"total": 50, "items": [{"codigo": "COMPUTACAO", "nome": "Computação",
+#                              "chave": "computacao", "informativo_id": 3, ...}]}
+
+# 3) Trigger an analysis by the textual key (resolves to informativo_id by slug)
+curl -X POST http://localhost:8000/api/analysis \
+  -H "Content-Type: application/json" \
+  -d '{"informativo_key": "computacao", "model": "gemini"}'
+```
+
+The textual key is the slugified filename prefix (`CB_I_FICHA_*` → `cb_i`,
+`COMPUTACAO_FICHA_*` → `computacao`); the official CAPES area name lives in the
+static catalog `api/fichas_catalog.py`. Ingestion is idempotent via `drive_file_id`.
+
 ## 💻 Using Commands Without Makefile
 
 If you prefer to skip the Makefile, you can use uv directly:

@@ -47,6 +47,12 @@ Este guia descreve como integrar Dramatiq com o APOEMA para executar análises d
 - A conversão nunca bloqueia a fila FIFO de análises: são filas independentes, e o
   docling/torch só é carregado no processo que executa a conversão (import lazy em
   `conversion/engine.py`).
+- A **ingestão de fichas do Google Drive** (`api/drive_ingestion.py`) alimenta essa
+  mesma fila `conversion`: para cada PDF baixado, cria um `informativo_documents`
+  (status `pending`) e envia `convert_informativo_document.send(document_id=...)`.
+  O `converter_worker` consome na ordem; se o worker estiver fora do ar na hora, o
+  RabbitMQ retém a mensagem até ele subir. Re-ingestão (startup ou
+  `POST /api/fichas/ingest`) re-enfileira apenas documentos `pending`/`failed`.
 
 ## Fluxo de Análise
 

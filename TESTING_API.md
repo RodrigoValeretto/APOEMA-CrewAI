@@ -614,6 +614,29 @@ curl -X POST http://localhost:8000/api/analysis \
 - análise em informativo sem ficha convertida → **400**
 - `/conteudo` de documento não convertido → **409**
 
+### 5. Ingestão de fichas do Drive + chave textual (feature ficha ingestion)
+```bash
+# Re-roda a ingestão da pasta pública (idempotente)
+curl -X POST http://localhost:8000/api/fichas/ingest
+# → {total: 58, downloaded: 58, new_documents: 58, reenqueued: 0, skipped: 0, errors: 0}
+
+# De-para de todas as áreas (código → nome oficial → chave → ids/status)
+curl http://localhost:8000/api/fichas
+# → {total: 50, items: [{codigo: "COMPUTACAO", nome: "Computação",
+#                        chave: "computacao", informativo_id: 3, ...}]}
+
+# Dispara análise pela chave textual (resolve a informativo_id por slug)
+curl -X POST http://localhost:8000/api/analysis \
+  -H "Content-Type: application/json" \
+  -d '{"informativo_key": "computacao", "model": "gemini"}'
+```
+
+### Erros esperados (feature ficha ingestion)
+- `POST /api/fichas/ingest` sem `DRIVE_FOLDER_ID` configurado → **400**
+- `informativo_key` desconhecida → **400** (mensagem aponta para `GET /api/fichas`)
+- `informativo_key` + `informativo_id` juntos → **400** (mutuamente exclusivos)
+- `informativo_key` + assessment explícito → **400**
+
 ---
 
 ## 📚 Recursos
@@ -625,6 +648,6 @@ curl -X POST http://localhost:8000/api/analysis \
 
 ---
 
-**Última atualização:** Outubro 2026 (features report-reference, zombie-kill, cap de texto e estatísticas determinísticas do CSV)
-**Versão:** 2.2.0
+**Última atualização:** Outubro 2026 (features report-reference, zombie-kill, cap de texto, estatísticas determinísticas do CSV e ingestão de fichas do Drive + chave textual)
+**Versão:** 2.3.0
 **Status:** Pronto para testes ✅
