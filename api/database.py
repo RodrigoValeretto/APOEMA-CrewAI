@@ -795,6 +795,7 @@ def count_older_pending_analyses(analysis_id: int) -> int:
 _DOC_SELECT = """
     SELECT d.id, d.informativo_id, d.kind, d.status, d.error,
            d.original_file_id, d.converted_file_id,
+           d.drive_file_id,
            d.created_at, d.updated_at,
            fo.file_name AS original_file_name, fo.file_path AS original_file_path,
            fo.file_size AS original_file_size,
@@ -851,6 +852,24 @@ def get_informativo(informativo_id: int) -> Dict[str, Any]:
         raise DatabaseError(f"Failed to get informativo: {str(e)}")
 
 
+def get_informativo_by_slug(slug: str) -> Optional[Dict[str, Any]]:
+    """Get an informativo row by slug, or None if it does not exist."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT id, nome, slug, quadrienio, created_at
+                    FROM informativos WHERE slug = %s
+                    """,
+                    (slug,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get informativo by slug: {str(e)}")
+
+
 def list_informativos() -> List[Dict[str, Any]]:
     """List all informativos (newest first) with document counts."""
     try:
@@ -873,7 +892,10 @@ def list_informativos() -> List[Dict[str, Any]]:
 
 
 def create_informativo_document(
-    informativo_id: int, kind: str, original_file_id: int
+    informativo_id: int,
+    kind: str,
+    original_file_id: int,
+    drive_file_id: Optional[str] = None,
 ) -> int:
     """Register a document upload inside an informativo (status: pending)."""
     try:
@@ -882,11 +904,18 @@ def create_informativo_document(
                 cur.execute(
                     """
                     INSERT INTO informativo_documents
-                        (informativo_id, kind, status, original_file_id, created_at, updated_at)
-                    VALUES (%s, %s, 'pending', %s, %s, %s)
+                        (informativo_id, kind, status, original_file_id, drive_file_id, created_at, updated_at)
+                    VALUES (%s, %s, 'pending', %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (informativo_id, kind, original_file_id, datetime.now(), datetime.now()),
+                    (
+                        informativo_id,
+                        kind,
+                        original_file_id,
+                        drive_file_id,
+                        datetime.now(),
+                        datetime.now(),
+                    ),
                 )
                 row = cur.fetchone()
                 doc_id = row[0] if row else None
@@ -894,6 +923,20 @@ def create_informativo_document(
                 return doc_id
     except psycopg.Error as e:
         raise DatabaseError(f"Failed to create informativo document: {str(e)}")
+
+
+def get_informativo_document_by_drive_file_id(
+    drive_file_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Get a document by its Google Drive file id, or None (dedupe)."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(_DOC_SELECT + " WHERE d.drive_file_id = %s", (drive_file_id,))
+                row = cur.fetchone()
+                return dict(row) if row else None
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get document by drive file id: {str(e)}")
 
 
 def get_informativo_document(document_id: int) -> Dict[str, Any]:
