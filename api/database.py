@@ -1044,3 +1044,35 @@ def get_completed_documents_by_kinds(
                 return [dict(r) for r in cur.fetchall()]
     except psycopg.Error as e:
         raise DatabaseError(f"Failed to get informativo converted documents: {str(e)}")
+
+
+def get_ficha_de_para_rows() -> List[Dict[str, Any]]:
+    """De-para rows: per informativo, its latest ficha document (or NULLs).
+
+    Returns one row per informativo (joined to its most recent ``kind='ficha'``
+    document), keyed by slug. Informativos without a ficha document yet still
+    appear with NULL document fields — the de-para endpoint overlays the static
+    catalog on top of this.
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (i.id)
+                           i.id AS informativo_id,
+                           i.slug,
+                           i.quadrienio,
+                           d.id AS documento_id,
+                           d.status,
+                           d.converted_file_id,
+                           d.drive_file_id
+                    FROM informativos i
+                    LEFT JOIN informativo_documents d
+                           ON d.informativo_id = i.id AND d.kind = 'ficha'
+                    ORDER BY i.id, d.id DESC NULLS LAST
+                    """
+                )
+                return [dict(r) for r in cur.fetchall()]
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get ficha de-para rows: {str(e)}")
