@@ -87,9 +87,21 @@ class AnalysisRequest(BaseModel):
             "ID of an informativo (CAPES area corpus). The informativo's converted "
             "ficha is used as the assessment file and its converted anexos/adendos "
             "are attached as extra Knowledge sources (retrieval). Alternative to "
-            "assessment_file / assessment_file_id / assessment_file_url."
+            "assessment_file / assessment_file_id / assessment_file_url. Mutually "
+            "exclusive with informativo_key."
         ),
         examples=[1],
+    )
+    informativo_key: Optional[str] = Field(
+        None,
+        description=(
+            "Textual key of a CAPES ficha area (the informativo slug, e.g. "
+            "'computacao', 'cb_i'). Resolved to informativo_id by slug; the "
+            "converted ficha becomes the assessment file. Alternative to "
+            "informativo_id and to assessment_file / assessment_file_id / "
+            "assessment_file_url."
+        ),
+        examples=["computacao"],
     )
     report_reference: Optional[str] = Field(
         None,
@@ -111,7 +123,7 @@ class AnalysisRequest(BaseModel):
         }
     }
 
-    @validator("assessment_file", "pdf_path", "png_path", "csv_path", "assessment_file_url", "pdf_url", "png_url", "csv_url", "report_reference", pre=True)
+    @validator("assessment_file", "pdf_path", "png_path", "csv_path", "assessment_file_url", "pdf_url", "png_url", "csv_url", "report_reference", "informativo_key", pre=True)
     def empty_str_to_none(cls, v):
         if v == "":
             return None

@@ -28,9 +28,25 @@ class TestValidateAnalysisRequestInformativo:
         is_valid, _ = validate_analysis_request(informativo_id=1)
         assert is_valid is True
 
+    def test_informativo_key_alone_is_valid(self):
+        is_valid, _ = validate_analysis_request(informativo_key="computacao")
+        assert is_valid is True
+
+    def test_informativo_id_and_key_are_mutually_exclusive(self):
+        is_valid, msg = validate_analysis_request(informativo_id=1, informativo_key="cb_i")
+        assert is_valid is False
+        assert "mutually exclusive" in msg
+
     def test_informativo_with_assessment_is_invalid(self):
         is_valid, msg = validate_analysis_request(
             assessment_file="/tmp/x.json", informativo_id=1
+        )
+        assert is_valid is False
+        assert "cannot be combined" in msg
+
+    def test_informativo_key_with_assessment_is_invalid(self):
+        is_valid, msg = validate_analysis_request(
+            assessment_file="/tmp/x.json", informativo_key="computacao"
         )
         assert is_valid is False
         assert "cannot be combined" in msg
@@ -49,6 +65,7 @@ class TestAnalysisRequestModel:
     def test_informativo_id_default_none(self):
         request = AnalysisRequest.model_construct()
         assert request.informativo_id is None
+        assert request.informativo_key is None
 
     def test_informativo_id_accepted(self):
         request = AnalysisRequest.model_construct(
@@ -56,6 +73,12 @@ class TestAnalysisRequestModel:
         )
         assert request.informativo_id == 3
         assert request.model == "ollama"
+
+    def test_informativo_key_accepted(self):
+        request = AnalysisRequest.model_construct(
+            informativo_key="computacao", model="gemini"
+        )
+        assert request.informativo_key == "computacao"
 
 
 class TestAllowedExtensions:

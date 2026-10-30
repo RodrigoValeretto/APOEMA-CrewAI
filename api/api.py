@@ -368,6 +368,16 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         InvalidAnalysisInput: If input is invalid
     """
     try:
+        # Resolve informativo_key -> informativo_id (textual key = informativo slug).
+        if request.informativo_key:
+            informativo = database.get_informativo_by_slug(request.informativo_key)
+            if informativo is None:
+                raise InvalidAnalysisInput(
+                    f"Unknown ficha key '{request.informativo_key}'. "
+                    "See GET /api/fichas for the available keys."
+                )
+            request.informativo_id = informativo["id"]
+
         # Validate input (including URLs)
         is_valid, error_msg = validate_analysis_request(
             assessment_file=request.assessment_file,
@@ -384,6 +394,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             csv_url=request.csv_url,
             model=request.model,
             informativo_id=request.informativo_id,
+            informativo_key=request.informativo_key,
         )
         if not is_valid:
             raise InvalidAnalysisInput(error_msg)

@@ -3,7 +3,7 @@ Input validation functions for APOEMA API
 """
 import os
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 from .constants import (
     AnalysisType,
     ModelType,
@@ -274,6 +274,7 @@ def validate_analysis_request(
     csv_url: str = None,
     model: str = None,
     informativo_id: int = None,
+    informativo_key: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """
     Validate complete analysis request
@@ -314,17 +315,20 @@ def validate_analysis_request(
         )
 
         # Validate that assessment input comes from ONE source: either an
-        # explicit assessment file (path/ID/URL) or an informativo whose
-        # converted ficha plays that role.
+        # explicit assessment file (path/ID/URL) or an informativo (by id or by
+        # textual key) whose converted ficha plays that role.
         has_assessment_source = bool(assessment_file or assessment_file_id or assessment_file_url)
-        if informativo_id and has_assessment_source:
+        informativo_source = informativo_id or informativo_key
+        if informativo_id and informativo_key:
+            return False, "informativo_id and informativo_key are mutually exclusive"
+        if informativo_source and has_assessment_source:
             return (
                 False,
-                "informativo_id cannot be combined with assessment_file / "
-                "assessment_file_id / assessment_file_url",
+                "informativo_id / informativo_key cannot be combined with "
+                "assessment_file / assessment_file_id / assessment_file_url",
             )
-        if not informativo_id and not has_assessment_source:
-            return False, "assessment_file, assessment_file_id, assessment_file_url, or informativo_id must be provided"
+        if not informativo_source and not has_assessment_source:
+            return False, "assessment_file, assessment_file_id, assessment_file_url, informativo_id, or informativo_key must be provided"
 
         # Validate URLs
         if assessment_file_url:
