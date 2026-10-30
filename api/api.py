@@ -47,6 +47,8 @@ from .models import (
     InformativoListResponse,
     InformativoDocumentResponse,
     InformativoDocumentListResponse,
+    FichaDeParaResponse,
+    FichaDeParaListResponse,
     ReportResponse,
     ReportAnalysisItem,
 )
@@ -91,6 +93,7 @@ from tasks import (
 )
 from conversion_tasks import convert_informativo_document
 from . import drive_ingestion
+from .fichas_catalog import FICHA_AREAS, ficha_key
 
 
 config = get_config()
@@ -1481,6 +1484,52 @@ async def ingest_drive_fichas_endpoint():
             drive_ingestion.ingest_drive_folder, config.DRIVE_FOLDER_ID
         )
         return stats
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.get(
+    "/api/fichas",
+    response_model=FichaDeParaListResponse,
+    tags=["Fichas"],
+)
+async def list_fichas_de_para_endpoint():
+    """De-para of every catalogued CAPES ficha area.
+
+    Merges the static catalog (filename code -> official name -> textual key)
+    with the ingestion state from the DB (informativo/document ids, conversion
+    status, quadriênio, drive file id). Areas not yet ingested have null ids
+    and status, so this doubles as the "what's missing" panel.
+    """
+    try:
+        db_rows = {
+            r["slug"]: r
+            for r in database.get_ficha_de_para_rows()
+            if r.get("slug")
+        }
+        items = []
+        for codigo, nome in sorted(FICHA_AREAS.items(), key=lambda kv: kv[0]):
+            chave = ficha_key(codigo)
+            row = db_rows.get(chave, {})
+            items.append(
+                FichaDeParaResponse(
+                    codigo=codigo,
+                    nome=nome,
+                    chave=chave,
+                    informativo_id=row.get("informativo_id"),
+                    documento_id=row.get("documento_id"),
+                    converted_file_id=row.get("converted_file_id"),
+                    status=row.get("status"),
+                    quadrienio=row.get("quadrienio"),
+                    drive_file_id=row.get("drive_file_id"),
+                )
+            )
+        return FichaDeParaListResponse(total=len(items), items=items)
     except ApoemaException:
         raise
     except Exception as e:

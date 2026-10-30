@@ -253,6 +253,20 @@ Execução concluída!
 - `output/output_YYYYMMDDHHMMSS.md` - Análise dos critérios
 - `output/conformance_report_YYYYMMDDHHMMSS.md` - Relatório de conformidade com validações dos gráficos
 
+## 📥 Ingestão de Fichas CAPES do Google Drive
+
+O sistema baixa automaticamente as fichas de avaliação CAPES de uma pasta pública
+do Drive e as ingere no pipeline de informativos+conversão — sem upload manual:
+
+- **Startup**: com `DRIVE_FOLDER_ID` + `DRIVE_AUTO_INGEST=true` no `.env`, a API
+  ingere a pasta a cada subida (idempotente por `drive_file_id`).
+- **Endpoint**: `POST /api/fichas/ingest` re-roda sob demanda; `GET /api/fichas`
+  lista o de-para (código → nome oficial CAPES → chave textual → ids/status).
+- **Chave textual**: `POST /api/analysis` aceita `informativo_key` (ex.
+  `"computacao"`, `"cb_i"`) como alternativa ao `informativo_id`.
+
+Ver QUICKSTART.md (seção "Ficha ingestion from Google Drive") e API_IMPLEMENTATION_SUMMARY.md.
+
 ## 📁 Estrutura do Projeto
 
 ```

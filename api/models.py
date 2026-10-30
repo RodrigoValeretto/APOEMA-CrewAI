@@ -633,3 +633,40 @@ class InformativoDocumentListResponse(BaseModel):
 
     informativo_id: int
     items: List[InformativoDocumentResponse]
+
+
+class FichaDeParaResponse(BaseModel):
+    """De-para row: filename code -> official name -> textual key -> ids/status."""
+
+    codigo: str
+    nome: str
+    chave: str
+    informativo_id: Optional[int] = None
+    documento_id: Optional[int] = None
+    converted_file_id: Optional[int] = None
+    status: Optional[str] = None  # conversion status of the ficha document
+    quadrienio: Optional[str] = None
+    drive_file_id: Optional[str] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "codigo": "COMPUTACAO",
+                "nome": "Computação",
+                "chave": "computacao",
+                "informativo_id": 3,
+                "documento_id": 7,
+                "converted_file_id": 12,
+                "status": "completed",
+                "quadrienio": "2025-2028",
+                "drive_file_id": "1wKFaYpVM7wg3wcF9EHYi5sLy0tQY_eF_",
+            }
+        }
+    }
+
+
+class FichaDeParaListResponse(BaseModel):
+    """De-para listing: every catalogued CAPES ficha area."""
+
+    total: int
+    items: List[FichaDeParaResponse]
