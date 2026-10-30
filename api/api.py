@@ -90,6 +90,7 @@ from tasks import (
     enqueue_analysis_for_sequential_processing,
 )
 from conversion_tasks import convert_informativo_document
+from . import drive_ingestion
 
 
 config = get_config()
@@ -133,10 +134,35 @@ async def _zombie_watchdog_loop():
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start the zombie watchdog background task with the app."""
+    """Start the zombie watchdog and the first-run Drive ingestion."""
     task = asyncio.create_task(_zombie_watchdog_loop())
+    _start_drive_auto_ingest()
     yield
     task.cancel()
+
+
+def _start_drive_auto_ingest():
+    """Kick off idempotent Drive ingestion in the background (non-blocking).
+
+    Only runs when DRIVE_AUTO_INGEST is enabled and DRIVE_FOLDER_ID is set.
+    The ingestion downloads PDFs and enqueues conversion jobs; the converter
+    worker consumes them, so the API stays responsive either way.
+    """
+    if not config.DRIVE_AUTO_INGEST:
+        logger.info("Drive auto-ingest disabled (DRIVE_AUTO_INGEST=false)")
+        return
+    if not config.DRIVE_FOLDER_ID:
+        logger.info("Drive auto-ingest skipped: DRIVE_FOLDER_ID is not set")
+        return
+
+    def _run():
+        try:
+            stats = drive_ingestion.ingest_drive_folder(config.DRIVE_FOLDER_ID)
+            logger.info(f"Drive auto-ingest complete: {stats}")
+        except Exception as e:
+            logger.exception(f"Drive auto-ingest failed: {e}")
+
+    asyncio.get_running_loop().run_in_executor(None, _run)
 
 
 # Create FastAPI app
@@ -1414,6 +1440,36 @@ async def get_informativo_document_content(informativo_id: int, document_id: int
             media_type="application/json",
             filename=filename,
         )
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/fichas/ingest",
+    tags=["Fichas"],
+)
+async def ingest_drive_fichas_endpoint():
+    """Re-run the Drive ficha ingestion (idempotent).
+
+    Downloads any new fichas/anexos added to the configured Drive folder,
+    registers them through the informativo+conversion pipeline, and re-enqueues
+    documents still pending/failed. Uses DRIVE_FOLDER_ID from config.
+    """
+    if not config.DRIVE_FOLDER_ID:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="DRIVE_FOLDER_ID is not configured",
+        )
+    try:
+        stats = await asyncio.to_thread(
+            drive_ingestion.ingest_drive_folder, config.DRIVE_FOLDER_ID
+        )
+        return stats
     except ApoemaException:
         raise
     except Exception as e:
