@@ -2,7 +2,7 @@
 
 Covers the two halves the feature adds beyond the (already-tested) catalog
 parsing: the Drive folder enumeration/download, and the idempotent ingestion
-orchestration (dedupe by drive_file_id, re-enqueue pending/failed, per-file
+orchestration (dedupe by drive_file_id, re-enqueue only failed docs, per-file
 isolation). Also exercises the real `GET /api/fichas` endpoint.
 """
 import sys
@@ -204,7 +204,9 @@ class TestIngestDriveFolder:
         assert db.created_documents == []
         assert sent == []
 
-    def test_pending_doc_is_reenqueued_not_redownloaded(self, monkeypatch):
+    def test_pending_doc_is_skipped_not_reenqueued(self, monkeypatch):
+        """A pending doc is already queued (durable message); re-enqueueing on
+        every startup would duplicate messages and bloat the queue."""
         db = _FakeDatabase(
             docs_by_file_id={"f1": {"id": 7, "status": "pending"}}
         )
@@ -214,10 +216,11 @@ class TestIngestDriveFolder:
 
         stats = ingest_drive_folder(FOLDER)
 
-        assert stats["reenqueued"] == 1
+        assert stats["skipped"] == 1
+        assert stats["reenqueued"] == 0
         assert stats["downloaded"] == 0
         assert stats["new_documents"] == 0
-        assert sent == [{"document_id": 7}]
+        assert sent == []
 
     def test_failed_doc_is_reenqueued(self, monkeypatch):
         db = _FakeDatabase(
@@ -384,3 +387,51 @@ class TestFichasDeParaEndpoint:
         assert by_key["computacao"]["drive_file_id"] == "abc123"
         # Un-ingested area stays null.
         assert by_key["adm"]["informativo_id"] is None
+
+
+class TestClaimAcceptsFailed:
+    """The conversion claim must re-accept a 'failed' doc so the ingestion's
+    re-enqueue can actually retry it (before the fix, a re-enqueued failed doc
+    hit "Not claimed" and stayed failed forever)."""
+
+    def _claim_sql(self, monkeypatch):
+        from api import database
+
+        captured = {}
+
+        class _Cursor:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def execute(self, sql, params):
+                captured["sql"] = sql
+                captured["params"] = params
+                self.rowcount = 0
+
+        class _Conn:
+            def cursor(self):
+                return _Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def commit(self):
+                pass
+
+        monkeypatch.setattr(database, "get_connection", lambda: _Conn())
+        database.claim_informativo_document(123)
+        return captured
+
+    def test_claim_accepts_failed_status(self, monkeypatch):
+        captured = self._claim_sql(monkeypatch)
+        assert "status = 'failed'" in captured["sql"]
+
+    def test_claim_still_accepts_pending(self, monkeypatch):
+        captured = self._claim_sql(monkeypatch)
+        assert "status = 'pending'" in captured["sql"]
