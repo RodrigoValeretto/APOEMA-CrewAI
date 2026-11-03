@@ -648,6 +648,6 @@ curl -X POST http://localhost:8000/api/analysis \
 
 ---
 
-**Última atualização:** Outubro 2026 (features report-reference, zombie-kill, cap de texto, estatísticas determinísticas do CSV e ingestão de fichas do Drive + chave textual)
+**Última atualização:** Novembro 2026 (fixes: `DRIVE_*` wired no docker-compose, `informativo_key` normalizado antes da validação, converter worker `--threads 1` p/ evitar OOM)
 **Versão:** 2.3.0
 **Status:** Pronto para testes ✅
