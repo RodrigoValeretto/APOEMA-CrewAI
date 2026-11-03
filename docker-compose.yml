@@ -162,7 +162,9 @@ services:
     container_name: apoema-converter-worker
     # Módulo (broker) ANTES das opções: no CLI 1.18 `-Q` tem nargs='*' e
     # engoliria o nome do módulo se viesse depois.
-    command: dramatiq conversion_tasks -Q conversion --processes 1 --verbose
+    # --threads 1: docling é CPU/VRAM-bound — concorrência aqui só estoura a RAM
+    # do Docker VM (OOM matou o worker ao converter 8 fichas em paralelo).
+    command: dramatiq conversion_tasks -Q conversion --processes 1 --threads 1 --verbose
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
@@ -208,6 +210,9 @@ services:
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
       OLLAMA_MAX_TOKENS: ${OLLAMA_MAX_TOKENS:-2048}
+      # Google Drive ficha ingestion (idempotent; runs on startup + POST /api/fichas/ingest).
+      DRIVE_FOLDER_ID: ${DRIVE_FOLDER_ID:-}
+      DRIVE_AUTO_INGEST: ${DRIVE_AUTO_INGEST:-true}
       # Zombie watchdog: mark analyses stuck in processing/queued as failed
       # and purge the RabbitMQ queues (30 min = longest legitimate run).
       ZOMBIE_WATCHDOG_INTERVAL: ${ZOMBIE_WATCHDOG_INTERVAL:-1800}
