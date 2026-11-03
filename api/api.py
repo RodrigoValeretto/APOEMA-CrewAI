@@ -380,6 +380,9 @@ async def create_analysis_endpoint(request: AnalysisRequest):
                     "See GET /api/fichas for the available keys."
                 )
             request.informativo_id = informativo["id"]
+            # Normalize: the textual key is resolved to its id; leaving both set
+            # would trip the "mutually exclusive" check in validate_analysis_request.
+            request.informativo_key = None
 
         # Validate input (including URLs)
         is_valid, error_msg = validate_analysis_request(
