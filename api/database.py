@@ -973,8 +973,9 @@ def claim_informativo_document(document_id: int) -> bool:
     """Atomically claim a pending document for conversion (pending -> processing).
 
     Returns True if this caller won the claim; False if the document is already
-    being processed or was already converted/failed. A document stuck in
-    'processing' for over 30 minutes (crashed worker mid-conversion) can be
+    being processed or was already converted. A 'failed' document is
+    re-claimable (the drive ingestion re-enqueues it to retry); a document stuck
+    in 'processing' for over 30 minutes (crashed worker mid-conversion) can be
     reclaimed — mirrors the analysis zombie-recovery lesson.
     """
     try:
@@ -987,6 +988,7 @@ def claim_informativo_document(document_id: int) -> bool:
                     WHERE id = %s
                       AND (
                         status = 'pending'
+                        OR status = 'failed'
                         OR (status = 'processing'
                             AND updated_at < %s - INTERVAL '30 minutes')
                       )

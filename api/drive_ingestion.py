@@ -123,13 +123,15 @@ def ingest_drive_folder(folder_id: str) -> Dict[str, int]:
                 continue
 
             # Idempotence: a doc already ingested by drive_file_id is left alone
-            # unless it still needs a conversion attempt.
+            # unless its conversion still needs a retry.
             existing_doc = database.get_informativo_document_by_drive_file_id(file_id)
             if existing_doc:
-                if existing_doc["status"] in (
-                    ConversionStatus.PENDING.value,
-                    ConversionStatus.FAILED.value,
-                ):
+                # 'failed' -> re-enqueue to retry the conversion. 'pending' is
+                # already queued (its durable message survives worker restarts),
+                # so re-enqueueing it on every startup would only duplicate
+                # messages and bloat the queue; 'processing'/'completed' are
+                # handled by the claim / already done.
+                if existing_doc["status"] == ConversionStatus.FAILED.value:
                     from conversion_tasks import convert_informativo_document
 
                     convert_informativo_document.send(
