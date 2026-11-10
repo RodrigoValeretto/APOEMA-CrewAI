@@ -13,7 +13,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, JSONResponse
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 import asyncio
 import contextlib
 import os
@@ -51,6 +51,9 @@ from .models import (
     FichaDeParaListResponse,
     ReportResponse,
     ReportAnalysisItem,
+    ReportIngestRequest,
+    ReportIngestResponse,
+    ReportIngestItem,
 )
 from .constants import (
     AnalysisType,
@@ -82,7 +85,7 @@ from .validators import (
     slugify,
 )
 from .middleware import setup_middleware
-from . import database, file_manager
+from . import database, file_manager, report_ingestion
 from zombie_kill import (
     kill_zombie_analysis as zombie_kill_single,
     cleanup_zombies as zombie_cleanup_all,
@@ -93,7 +96,7 @@ from tasks import (
 )
 from conversion_tasks import convert_informativo_document
 from . import drive_ingestion
-from .fichas_catalog import FICHA_AREAS, ficha_key
+from .fichas_catalog import FICHA_AREAS, ficha_key, area_code_from_name
 
 
 config = get_config()
@@ -840,6 +843,189 @@ async def get_report_endpoint(report_reference: str):
             analyses=items,
         )
 
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/reports/ingest",
+    response_model=ReportIngestResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Analysis"],
+)
+async def ingest_report_endpoint(request: ReportIngestRequest):
+    """Consume a published APOEMA report and enqueue one analysis per chart.
+
+    Given a report id (the md5 in ``.../apoema-pg/view/<id>``), this endpoint:
+
+    1. Reads ``info-report`` to learn the CAPES area name and resolves it to an
+       informativo (by textual key) whose converted ficha becomes the assessment
+       source for every chart analysis.
+    2. Reads ``charts`` to list the report's charts.
+    3. For each chart that has a file, downloads the PNG and fetches its CSV,
+       then creates a ``png_csv`` analysis (all grouped under the same
+       ``report_reference`` = report id) and enqueues it.
+
+    Idempotent: re-ingesting the same report id skips charts that already have
+    an analysis under that reference.
+    """
+    try:
+        report_id = request.report_id
+        if not report_ingestion.validate_report_id(report_id):
+            raise InvalidAnalysisInput(
+                f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
+            )
+
+        # 1. Report info -> CAPES area name.
+        info = report_ingestion.fetch_report_info(report_id)
+        area = report_ingestion.report_area_name(info)
+
+        # 2. Resolve the area to an informativo (assessment source). Without a
+        # converted ficha there is nothing to feed the chart analyses.
+        informativo_id = None
+        informativo_key = None
+        if area:
+            code = area_code_from_name(area)
+            if code:
+                informativo_key = ficha_key(code)
+                informativo = database.get_informativo_by_slug(informativo_key)
+                if informativo:
+                    informativo_id = informativo["id"]
+        if not informativo_id:
+            raise InvalidAnalysisInput(
+                f"Report area {area!r} could not be resolved to an ingested "
+                "informativo. Ingest the corresponding ficha first "
+                "(see POST /api/fichas/ingest) and retry."
+            )
+
+        assessment_file, converted_ficha_id, knowledge_files, informativo_mappings = (
+            _resolve_informativo_inputs(informativo_id)
+        )
+
+        # 3. List charts.
+        charts = report_ingestion.fetch_charts(report_id)
+        already_analyzed = database.get_report_png_urls(report_id)
+
+        created = skipped = failed = 0
+        items: List[ReportIngestItem] = []
+
+        for chart in charts:
+            chart_id = chart.get("id") or chart.get("url_n") or ""
+            has_file = bool(chart.get("hasfile"))
+
+            if not has_file:
+                skipped += 1
+                items.append(
+                    ReportIngestItem(chart_id=chart_id, png_url="", status="skipped")
+                )
+                continue
+            if not report_ingestion.validate_chart_id(chart_id):
+                failed += 1
+                items.append(
+                    ReportIngestItem(
+                        chart_id=chart_id, png_url="", status="failed"
+                    )
+                )
+                continue
+
+            png_url = report_ingestion.chart_png_url(report_id, chart_id)
+            if png_url in already_analyzed:
+                skipped += 1
+                items.append(
+                    ReportIngestItem(chart_id=chart_id, png_url=png_url, status="skipped")
+                )
+                continue
+
+            try:
+                # CSV (chart data) first — a chart without data can't be analyzed.
+                csv_payload = report_ingestion.fetch_chart_csv(png_url)
+                csv_text = report_ingestion.chart_csv_text(csv_payload)
+                if not csv_text:
+                    skipped += 1
+                    items.append(
+                        ReportIngestItem(chart_id=chart_id, png_url=png_url, status="skipped")
+                    )
+                    continue
+
+                # Download PNG + save CSV to disk (both dedup by URL).
+                png_file_id, png_path = await file_manager.download_file_from_url(
+                    png_url, FileType.PNG
+                )
+                csv_file_id, csv_path = file_manager.save_text_file(
+                    csv_text,
+                    FileType.CSV,
+                    chart_id,
+                    url=report_ingestion.chart_csv_url(png_url),
+                )
+
+                analysis_id = database.create_analysis(
+                    analysis_type=AnalysisType.PNG_CSV.value,
+                    status=AnalysisStatus.PENDING.value,
+                    model=request.model,
+                    important_programs=request.important_programs,
+                    informativo_id=informativo_id,
+                    report_reference=report_id,
+                )
+
+                # Map every input so retry / report aggregation can rebuild it.
+                mappings = [(png_file_id, FileType.PNG.value), (csv_file_id, FileType.CSV.value)]
+                if converted_ficha_id:
+                    mappings.append((converted_ficha_id, FileType.ASSESSMENT.value))
+                mappings.extend(informativo_mappings)
+                for file_id, file_type in mappings:
+                    database.create_analysis_file_mapping(
+                        analysis_id=analysis_id,
+                        file_id=file_id,
+                        file_type=file_type,
+                    )
+
+                enqueue_analysis_for_sequential_processing.send(
+                    analysis_id=analysis_id,
+                    assessment_file=assessment_file,
+                    pdf_file=None,
+                    png_file=png_path,
+                    csv_file=csv_path,
+                    output_prefix=f"analysis_{analysis_id}",
+                    model=request.model,
+                    important_programs=request.important_programs,
+                    knowledge_files=knowledge_files,
+                )
+
+                created += 1
+                items.append(
+                    ReportIngestItem(
+                        chart_id=chart_id,
+                        png_url=png_url,
+                        analysis_id=analysis_id,
+                        status="created",
+                    )
+                )
+            except ApoemaException:
+                raise
+            except Exception as e:
+                logger.exception(f"Failed to ingest chart {chart_id} of report {report_id}")
+                failed += 1
+                items.append(
+                    ReportIngestItem(chart_id=chart_id, png_url=png_url, status="failed")
+                )
+
+        return ReportIngestResponse(
+            report_id=report_id,
+            report_reference=report_id,
+            area=area or None,
+            informativo_key=informativo_key,
+            total_charts=len(charts),
+            created=created,
+            skipped=skipped,
+            failed=failed,
+            charts=items,
+        )
+
+    except ApoemaException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

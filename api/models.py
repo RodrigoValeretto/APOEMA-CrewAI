@@ -401,6 +401,67 @@ class ReportResponse(BaseModel):
     analyses: List[ReportAnalysisItem] = Field(default_factory=list)
 
 
+class ReportIngestRequest(BaseModel):
+    """Request to consume a published APOEMA report by its id."""
+
+    report_id: str = Field(
+        ...,
+        description=(
+            "APOEMA report id (the md5 in the report view URL "
+            "https://sistemas.prpg.usp.br/apoema-pg/view/<id>)"
+        ),
+        examples=["b4c319228b363dc55611ca3e78cb1f8a"],
+    )
+    model: str = Field(
+        default=ModelType.OLLAMA.value,
+        description="LLM model to use for the chart analyses",
+        pattern="^(gemini|ollama)$",
+    )
+    important_programs: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Program identifiers (Sigla values) marked as important; passed to "
+            "every chart analysis"
+        ),
+        examples=[["UFBA-A-5-Z"]],
+    )
+
+
+class ReportIngestItem(BaseModel):
+    """One chart of a consumed report and the analysis it spawned."""
+
+    chart_id: str = Field(..., description="Chart identifier (e.g. '00-doc-origem')")
+    png_url: str = Field(..., description="Source URL of the chart PNG")
+    analysis_id: Optional[int] = Field(
+        None, description="Analysis id created for this chart"
+    )
+    status: str = Field(..., description="'created', 'skipped' (no file) or 'failed'")
+
+
+class ReportIngestResponse(BaseModel):
+    """Result of consuming an APOEMA report."""
+
+    report_id: str = Field(..., description="The report id that was consumed")
+    report_reference: str = Field(
+        ..., description="report_reference grouping every spawned analysis"
+    )
+    area: Optional[str] = Field(
+        None, description="CAPES area name extracted from the report info"
+    )
+    informativo_key: Optional[str] = Field(
+        None,
+        description=(
+            "Textual key of the informativo resolved from the report area; "
+            "null when the area could not be matched"
+        ),
+    )
+    total_charts: int = Field(..., description="Charts listed by the report")
+    created: int = Field(..., description="Analyses created")
+    skipped: int = Field(..., description="Charts skipped (no file or already analyzed)")
+    failed: int = Field(..., description="Charts that failed to ingest")
+    charts: List[ReportIngestItem] = Field(default_factory=list)
+
+
 class FileUploadResponse(BaseModel):
     """Response model for file upload"""
 
