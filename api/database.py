@@ -150,6 +150,32 @@ def get_analyses_by_report(report_reference: str) -> List[Dict[str, Any]]:
         raise DatabaseError(f"Failed to get analyses by report: {str(e)}")
 
 
+def get_report_png_urls(report_reference: str) -> set:
+    """PNG source URLs already analyzed under a report (idempotent re-ingest).
+
+    Used by the report-ingestion endpoint to skip charts that already have an
+    analysis, so re-triggering the endpoint does not duplicate analyses.
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT af.url
+                    FROM analysis a
+                    JOIN analysis_file_mapping afm ON afm.analysis_id = a.id
+                    JOIN analysis_files af ON af.id = afm.file_id
+                    WHERE a.report_reference = %s
+                      AND af.file_type = 'png'
+                      AND af.url IS NOT NULL
+                    """,
+                    (report_reference,),
+                )
+                return {row["url"] for row in cur.fetchall()}
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get report png urls: {str(e)}")
+
+
 def get_all_analyses(
     skip: int = 0,
     limit: int = 10,

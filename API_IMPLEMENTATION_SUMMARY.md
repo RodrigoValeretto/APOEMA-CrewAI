@@ -243,6 +243,18 @@ Cliente faz polling:
     inputs). Ordenado por ordem de criação (`id`).
   - Retorna `{total: 0, analyses: []}` (não 404) quando nenhuma análise casa com a
     referência — um relatório recém-criado simplesmente ainda não tem análises.
+- **POST /api/reports/ingest**
+  - Request: `{report_id, model?, important_programs?}`
+  - Response: `{report_id, report_reference, area, informativo_key, total_charts,
+    created, skipped, failed, charts[]}`
+  - Consome um relatório APOEMA publicado a partir do seu id (o md5 na URL
+    `https://sistemas.prpg.usp.br/apoema-pg/view/<id>`): lê `info-report` para
+    derivar a área CAPES e a resolve num informativo (cuja ficha convertida vira o
+    assessment), lê `charts` para listar os gráficos e, para cada gráfico com
+    arquivo, baixa o PNG e obtém o CSV (`chartcsv`) e cria/enfileira uma análise
+    `png_csv` — todas agrupadas sob `report_reference` = id do relatório.
+    **Idempotente**: re-ingerir o mesmo id pula gráficos que já têm análise sob
+    aquela referência.
 
 ### Zombie cleanup (recuperação automática de análises presas)
 - **POST /api/analysis/{analysis_id}/zombie-kill**

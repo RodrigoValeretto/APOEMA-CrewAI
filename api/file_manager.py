@@ -298,6 +298,49 @@ async def download_file_from_url(
         raise URLFetchError(f"Failed to download file from {url}: {str(e)}")
 
 
+def save_text_file(
+    text: str,
+    file_type: FileType,
+    file_name: str,
+    url: Optional[str] = None,
+) -> Tuple[int, str]:
+    """Write UTF-8 text to the uploads dir and register an ``analysis_file``.
+
+    Deduplicates by ``url`` (when given) so re-ingesting the same source reuses
+    the existing file instead of duplicating it. ``file_name`` is a base name
+    without extension (the expected extension for ``file_type`` is appended).
+
+    Returns:
+        Tuple of (file_id, file_path).
+    """
+    ensure_upload_dir()
+
+    if url:
+        existing = get_file_by_url(url)
+        if existing:
+            return existing["id"], existing["file_path"]
+
+    from datetime import datetime
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_")
+    ext = ALLOWED_FILE_EXTENSIONS.get(file_type.value, [".txt"])[0]
+    safe_name = timestamp + file_name + ext
+    file_path = config.UPLOAD_DIR / safe_name
+
+    content = text.encode("utf-8")
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    file_id = database.create_analysis_file(
+        file_type=file_type.value,
+        file_name=file_name + ext,
+        file_path=str(file_path),
+        file_size=len(content),
+        url=url,
+    )
+    return file_id, str(file_path)
+
+
 def clear_stale_uploads(max_age_hours: int = 24) -> int:
     """
     Clean up uploaded files older than specified age
