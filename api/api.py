@@ -952,7 +952,7 @@ async def ingest_report_endpoint(request: ReportIngestRequest):
 
                 # Download PNG + save CSV to disk (both dedup by URL).
                 png_file_id, png_path = await file_manager.download_file_from_url(
-                    png_url, FileType.PNG
+                    png_url, FileType.PNG, timeout=report_ingestion.chart_png_timeout()
                 )
                 csv_file_id, csv_path = file_manager.save_text_file(
                     csv_text,

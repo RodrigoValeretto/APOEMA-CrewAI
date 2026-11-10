@@ -130,7 +130,7 @@ class TestIngestEndpoint:
             lambda informativo_id: ("/app/uploads/ficha.json", 10, [], []),
         )
 
-        async def _fake_download(url, file_type):
+        async def _fake_download(url, file_type, timeout=30):
             return 101, f"/app/uploads/{file_type.value}_chart.png"
 
         monkeypatch.setattr(

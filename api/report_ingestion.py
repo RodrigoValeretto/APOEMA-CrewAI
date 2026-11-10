@@ -21,6 +21,7 @@ chart.
 import csv
 import io
 import logging
+import os
 import re
 from typing import Any, Dict, List
 from urllib.parse import quote
@@ -43,6 +44,16 @@ _REPORT_ID_RE = re.compile(r"^[a-f0-9]{16,64}$")
 _CHART_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 _REQUEST_TIMEOUT = 30
+
+# Chart PNG download timeout, in seconds. The chart route (port 443) is behind
+# the USP VPN and may hang from outside it; a short, tunable timeout keeps the
+# ingest from stalling the whole report when the PNGs are unreachable.
+_CHART_PNG_TIMEOUT = float(os.getenv("APOEMA_CHART_PNG_TIMEOUT", "30"))
+
+
+def chart_png_timeout() -> float:
+    """Download timeout (seconds) to use for chart PNGs."""
+    return _CHART_PNG_TIMEOUT
 
 
 def validate_report_id(report_id: str) -> bool:

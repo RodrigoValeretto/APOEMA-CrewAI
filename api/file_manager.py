@@ -191,6 +191,7 @@ def get_file_path(file_id: int) -> Optional[str]:
 async def download_file_from_url(
     url: str,
     file_type: FileType,
+    timeout: float = 30,
 ) -> Tuple[int, str]:
     """
     Download a file from a URL and save it to disk with deduplication
@@ -224,7 +225,7 @@ async def download_file_from_url(
             return existing_file["id"], existing_file["file_path"]
 
         # Download file with timeout
-        response = requests.get(url, timeout=30, stream=True)
+        response = requests.get(url, timeout=timeout, stream=True)
         response.raise_for_status()
 
         # Validate content length
