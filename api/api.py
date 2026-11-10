@@ -1003,10 +1003,16 @@ async def ingest_report_endpoint(request: ReportIngestRequest):
                         status="created",
                     )
                 )
-            except ApoemaException:
-                raise
             except Exception as e:
-                logger.exception(f"Failed to ingest chart {chart_id} of report {report_id}")
+                # Per-chart isolation: one unreachable chart (e.g. the PNG route
+                # behind the USP VPN, or a chart without data) must not abort the
+                # whole report — record it as failed and move on.
+                logger.warning(
+                    "Failed to ingest chart %s of report %s: %s",
+                    chart_id,
+                    report_id,
+                    e,
+                )
                 failed += 1
                 items.append(
                     ReportIngestItem(chart_id=chart_id, png_url=png_url, status="failed")

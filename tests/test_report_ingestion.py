@@ -205,3 +205,63 @@ class TestIngestEndpoint:
         client = TestClient(api_module.app)
         resp = client.post("/api/reports/ingest", json={"report_id": "not-a-md5!"})
         assert resp.status_code == 400, resp.text
+
+    def test_unreachable_chart_does_not_abort_report(self, monkeypatch):
+        """A chart whose PNG download fails (VPN-blocked route) is marked
+        'failed' and the ingest continues — it must not 400/500 the whole report."""
+        from api import api as api_module
+        from api.exceptions import URLFetchError
+
+        monkeypatch.setattr(
+            api_module.report_ingestion,
+            "fetch_report_info",
+            lambda report_id: {"progs": "X:2021@Zootecnia - Recursos Pesqueiros"},
+        )
+        monkeypatch.setattr(
+            api_module.report_ingestion,
+            "fetch_charts",
+            lambda report_id: [{"url_n": "00-doc.png", "id": "00-doc.png", "hasfile": True}],
+        )
+        monkeypatch.setattr(
+            api_module.report_ingestion,
+            "fetch_chart_csv",
+            lambda png_url: {
+                "headers": [{"text": "Sigla", "value": "f1"}],
+                "data": [{"f1": "UFBA-A-5-Z"}],
+            },
+        )
+        monkeypatch.setattr(
+            api_module.database,
+            "get_informativo_by_slug",
+            lambda slug: {"id": 7, "nome": "Zootecnia", "slug": slug},
+        )
+        monkeypatch.setattr(
+            api_module.database,
+            "get_report_png_urls",
+            lambda ref: set(),
+        )
+        monkeypatch.setattr(
+            api_module,
+            "_resolve_informativo_inputs",
+            lambda informativo_id: ("/app/uploads/ficha.json", 10, [], []),
+        )
+
+        async def _failing_download(url, file_type, timeout=30):
+            raise URLFetchError(f"Request timeout when downloading from: {url}")
+
+        monkeypatch.setattr(
+            api_module.file_manager,
+            "download_file_from_url",
+            _failing_download,
+        )
+
+        client = TestClient(api_module.app)
+        resp = client.post(
+            "/api/reports/ingest",
+            json={"report_id": "b4c319228b363dc55611ca3e78cb1f8a"},
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["created"] == 0
+        assert body["failed"] == 1
+        assert body["charts"][0]["status"] == "failed"
