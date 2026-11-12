@@ -54,6 +54,9 @@ from .models import (
     ReportIngestRequest,
     ReportIngestResponse,
     ReportIngestItem,
+    ReportBatchIngestRequest,
+    ReportBatchIngestResponse,
+    ReportBatchIngestItem,
 )
 from .constants import (
     AnalysisType,
@@ -85,7 +88,7 @@ from .validators import (
     slugify,
 )
 from .middleware import setup_middleware
-from . import database, file_manager, report_ingestion
+from . import database, file_manager, report_ingestion, report_service
 from zombie_kill import (
     kill_zombie_analysis as zombie_kill_single,
     cleanup_zombies as zombie_cleanup_all,
@@ -93,6 +96,7 @@ from zombie_kill import (
 )
 from tasks import (
     enqueue_analysis_for_sequential_processing,
+    ingest_report_batch,
 )
 from conversion_tasks import convert_informativo_document
 from . import drive_ingestion
@@ -873,161 +877,66 @@ async def ingest_report_endpoint(request: ReportIngestRequest):
     an analysis under that reference.
     """
     try:
-        report_id = request.report_id
-        if not report_ingestion.validate_report_id(report_id):
-            raise InvalidAnalysisInput(
-                f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
-            )
+        # The service runs blocking ``requests``; offload to a thread so the
+        # async endpoint does not block the event loop.
+        response = await asyncio.to_thread(
+            report_service.ingest_report,
+            request.report_id,
+            request.model,
+            request.important_programs,
+        )
+        return response
 
-        # 1. Report info -> CAPES area name.
-        info = report_ingestion.fetch_report_info(report_id)
-        area = report_ingestion.report_area_name(info)
-
-        # 2. Resolve the area to an informativo (assessment source). Without a
-        # converted ficha there is nothing to feed the chart analyses.
-        informativo_id = None
-        informativo_key = None
-        if area:
-            code = area_code_from_name(area)
-            if code:
-                informativo_key = ficha_key(code)
-                informativo = database.get_informativo_by_slug(informativo_key)
-                if informativo:
-                    informativo_id = informativo["id"]
-        if not informativo_id:
-            raise InvalidAnalysisInput(
-                f"Report area {area!r} could not be resolved to an ingested "
-                "informativo. Ingest the corresponding ficha first "
-                "(see POST /api/fichas/ingest) and retry."
-            )
-
-        assessment_file, converted_ficha_id, knowledge_files, informativo_mappings = (
-            _resolve_informativo_inputs(informativo_id)
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
         )
 
-        # 3. List charts.
-        charts = report_ingestion.fetch_charts(report_id)
-        already_analyzed = database.get_report_png_urls(report_id)
 
-        created = skipped = failed = 0
-        items: List[ReportIngestItem] = []
+@app.post(
+    "/api/reports/ingest-batch",
+    response_model=ReportBatchIngestResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["Analysis"],
+)
+async def ingest_reports_batch_endpoint(request: ReportBatchIngestRequest):
+    """Enqueue a list of APOEMA reports to be ingested one at a time.
 
-        for chart in charts:
-            chart_id = chart.get("id") or chart.get("url_n") or ""
-            has_file = bool(chart.get("hasfile"))
+    The batch is processed asynchronously by a Dramatiq actor
+    (``ingest_report_batch``): each report id in ``reports_list`` is consumed
+    (charts fetched, PNGs/CSVs downloaded, one ``png_csv`` analysis per chart,
+    all grouped under ``report_reference`` = report id) in list order. A report
+    that fails to resolve is recorded and skipped without aborting the rest.
 
-            if not has_file:
-                skipped += 1
-                items.append(
-                    ReportIngestItem(chart_id=chart_id, png_url="", status="skipped")
-                )
-                continue
-            if not report_ingestion.validate_chart_id(chart_id):
-                failed += 1
-                items.append(
-                    ReportIngestItem(
-                        chart_id=chart_id, png_url="", status="failed"
-                    )
-                )
-                continue
-
-            png_url = report_ingestion.chart_png_url(report_id, chart_id)
-            if png_url in already_analyzed:
-                skipped += 1
-                items.append(
-                    ReportIngestItem(chart_id=chart_id, png_url=png_url, status="skipped")
-                )
-                continue
-
-            try:
-                # CSV (chart data) first — a chart without data can't be analyzed.
-                csv_payload = report_ingestion.fetch_chart_csv(png_url)
-                csv_text = report_ingestion.chart_csv_text(csv_payload)
-                if not csv_text:
-                    skipped += 1
-                    items.append(
-                        ReportIngestItem(chart_id=chart_id, png_url=png_url, status="skipped")
-                    )
-                    continue
-
-                # Download PNG + save CSV to disk (both dedup by URL).
-                png_file_id, png_path = await file_manager.download_file_from_url(
-                    png_url, FileType.PNG, timeout=report_ingestion.chart_png_timeout()
-                )
-                csv_file_id, csv_path = file_manager.save_text_file(
-                    csv_text,
-                    FileType.CSV,
-                    chart_id,
-                    url=report_ingestion.chart_csv_url(png_url),
+    Returns 202 immediately with the list of report ids accepted; track the
+    per-report outcome through the worker log (``[Reports] ...``) and the
+    ``GET /api/reports/{report_id}`` aggregation endpoint.
+    """
+    try:
+        # Validate the ids up front so a malformed entry fails fast, before
+        # consuming any worker time.
+        for report_id in request.reports_list:
+            if not report_ingestion.validate_report_id(report_id):
+                raise InvalidAnalysisInput(
+                    f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
                 )
 
-                analysis_id = database.create_analysis(
-                    analysis_type=AnalysisType.PNG_CSV.value,
-                    status=AnalysisStatus.PENDING.value,
-                    model=request.model,
-                    important_programs=request.important_programs,
-                    informativo_id=informativo_id,
-                    report_reference=report_id,
-                )
+        ingest_report_batch.send(
+            reports=request.reports_list,
+            model=request.model,
+            important_programs=request.important_programs,
+        )
 
-                # Map every input so retry / report aggregation can rebuild it.
-                mappings = [(png_file_id, FileType.PNG.value), (csv_file_id, FileType.CSV.value)]
-                if converted_ficha_id:
-                    mappings.append((converted_ficha_id, FileType.ASSESSMENT.value))
-                mappings.extend(informativo_mappings)
-                for file_id, file_type in mappings:
-                    database.create_analysis_file_mapping(
-                        analysis_id=analysis_id,
-                        file_id=file_id,
-                        file_type=file_type,
-                    )
-
-                enqueue_analysis_for_sequential_processing.send(
-                    analysis_id=analysis_id,
-                    assessment_file=assessment_file,
-                    pdf_file=None,
-                    png_file=png_path,
-                    csv_file=csv_path,
-                    output_prefix=f"analysis_{analysis_id}",
-                    model=request.model,
-                    important_programs=request.important_programs,
-                    knowledge_files=knowledge_files,
-                )
-
-                created += 1
-                items.append(
-                    ReportIngestItem(
-                        chart_id=chart_id,
-                        png_url=png_url,
-                        analysis_id=analysis_id,
-                        status="created",
-                    )
-                )
-            except Exception as e:
-                # Per-chart isolation: one unreachable chart (e.g. the PNG route
-                # behind the USP VPN, or a chart without data) must not abort the
-                # whole report — record it as failed and move on.
-                logger.warning(
-                    "Failed to ingest chart %s of report %s: %s",
-                    chart_id,
-                    report_id,
-                    e,
-                )
-                failed += 1
-                items.append(
-                    ReportIngestItem(chart_id=chart_id, png_url=png_url, status="failed")
-                )
-
-        return ReportIngestResponse(
-            report_id=report_id,
-            report_reference=report_id,
-            area=area or None,
-            informativo_key=informativo_key,
-            total_charts=len(charts),
-            created=created,
-            skipped=skipped,
-            failed=failed,
-            charts=items,
+        items = [
+            ReportBatchIngestItem(report_id=rid, status="queued")
+            for rid in request.reports_list
+        ]
+        return ReportBatchIngestResponse(
+            total=len(request.reports_list),
+            items=items,
         )
 
     except ApoemaException:

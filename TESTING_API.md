@@ -530,6 +530,7 @@ ab -n 100 -c 10 http://localhost:8000/health
 - [ ] `POST /api/analysis/{id}/zombie-kill` marca `failed` + purga filas
 - [ ] `POST /api/zombies/cleanup` mata zumbis antigos; watchdog desligável (`ZOMBIE_WATCHDOG_INTERVAL=0`)
 - [ ] `POST /api/reports/ingest` consome um relatório APOEMA pelo id → análises `png_csv` agrupadas
+- [ ] `POST /api/reports/ingest-batch` enfileira uma lista de relatórios → ingestão um por vez (202)
 
 ---
 
@@ -574,6 +575,22 @@ curl -X POST http://localhost:8000/api/reports/ingest \
 
 # Acompanha as análises do relatório depois:
 curl http://localhost:8000/api/reports/b4c319228b363dc55611ca3e78cb1f8a
+```
+
+## 🧪 Testando Report Ingest em lote (lista de relatórios)
+
+```bash
+# Enfileira uma lista de relatórios para ingestão um por vez (202 imediato).
+curl -X POST http://localhost:8000/api/reports/ingest-batch \
+  -H "Content-Type: application/json" \
+  -d "{\"reports_list\": [\"b4c319228b363dc55611ca3e78cb1f8a\", \"<outro-id>\"], \"model\": \"ollama\"}"
+
+# → {"total": 2, "items": [{"report_id": "...", "status": "queued"}, ...]}
+
+# O worker processa a lista em ordem; acompanhe pelo log:
+#   docker logs apoema-dramatiq-worker --since 5m | grep "\[Reports\]"
+# e depois agregue cada relatório:
+#   curl http://localhost:8000/api/reports/<id>
 ```
 
 ## 🧪 Testando Zombie Cleanup (recuperação de análise presa)
@@ -669,6 +686,6 @@ curl -X POST http://localhost:8000/api/analysis \
 
 ---
 
-**Última atualização:** Novembro 2026 (fixes: `DRIVE_*` wired no docker-compose, `informativo_key` normalizado antes da validação, converter worker `--threads 1` p/ evitar OOM; **report ingest**: `POST /api/reports/ingest` consome um relatório APOEMA pelo id e enfileira uma análise por gráfico)
+**Última atualização:** Novembro 2026 (fixes: `DRIVE_*` wired no docker-compose, `informativo_key` normalizado antes da validação, converter worker `--threads 1` p/ evitar OOM; **report ingest**: `POST /api/reports/ingest` consome um relatório APOEMA pelo id e enfileira uma análise por gráfico; **batch**: `POST /api/reports/ingest-batch` enfileira uma lista de relatórios para ingestão um por vez)
 **Versão:** 2.3.0
 **Status:** Pronto para testes ✅

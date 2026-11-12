@@ -1,5 +1,5 @@
-"""Tests for the APOEMA report ingestion (data access + endpoint)."""
-import json
+"""Tests for the APOEMA report ingestion (data access + endpoint + batch)."""
+import sys
 
 import pytest
 from fastapi.testclient import TestClient
@@ -80,95 +80,178 @@ class TestAreaReverseLookup:
         assert area_code_from_name("Área Inexistente") is None
 
 
-class TestIngestEndpoint:
-    """Endpoint behavior with the external APOEMA client and DB mocked out."""
+class TestReportService:
+    """The shared synchronous ingest (used by the single endpoint and the batch)."""
 
-    def _stub_ingest(self, monkeypatch):
-        from api import api as api_module
+    def _stub(self, monkeypatch):
+        import types
 
-        # Chart list: one with file, one without.
-        charts = [
-            {"url_n": "00-doc.png", "id": "00-doc.png", "hasfile": True},
-            {"url_n": "32-start-dout.png", "id": "32-start-dout.png", "hasfile": False},
-        ]
+        from api import report_service as svc
 
         captured = {}
 
         monkeypatch.setattr(
-            api_module.report_ingestion,
+            svc.report_ingestion,
             "fetch_report_info",
             lambda report_id: {"progs": "X:2021@Zootecnia - Recursos Pesqueiros"},
         )
         monkeypatch.setattr(
-            api_module.report_ingestion,
+            svc.report_ingestion,
             "fetch_charts",
-            lambda report_id: charts,
+            lambda report_id: [
+                {"url_n": "00-doc.png", "id": "00-doc.png", "hasfile": True},
+                {"url_n": "32-start-dout.png", "id": "32-start-dout.png", "hasfile": False},
+            ],
         )
         monkeypatch.setattr(
-            api_module.report_ingestion,
+            svc.report_ingestion,
             "fetch_chart_csv",
             lambda png_url: {
                 "headers": [{"text": "Sigla", "value": "f1"}],
                 "data": [{"f1": "UFBA-A-5-Z"}],
             },
         )
-
-        # DB: an informativo exists and has a converted ficha.
         monkeypatch.setattr(
-            api_module.database,
+            svc.database,
             "get_informativo_by_slug",
             lambda slug: {"id": 7, "nome": "Zootecnia", "slug": slug},
         )
+        monkeypatch.setattr(svc.database, "get_report_png_urls", lambda ref: set())
         monkeypatch.setattr(
-            api_module.database,
-            "get_report_png_urls",
-            lambda ref: set(),
+            svc,
+            "_resolve_informativo_inputs",
+            lambda informativo_id: ("/app/uploads/ficha.json", 10, [], []),
         )
         monkeypatch.setattr(
-            api_module,
+            svc.file_manager,
+            "download_file_from_url_sync",
+            lambda url, file_type, timeout=30: (101, "/app/uploads/chart.png"),
+        )
+        monkeypatch.setattr(
+            svc.file_manager,
+            "save_text_file",
+            lambda text, file_type, name, url=None: (102, f"/app/uploads/{name}.csv"),
+        )
+
+        analysis_ids = iter([1000, 1001])
+        monkeypatch.setattr(svc.database, "create_analysis", lambda **kw: next(analysis_ids))
+        monkeypatch.setattr(svc.database, "create_analysis_file_mapping", lambda **kw: None)
+
+        # Stub the lazy `tasks` import inside ingest_report.
+        fake_tasks = types.SimpleNamespace(
+            enqueue_analysis_for_sequential_processing=types.SimpleNamespace(
+                send=lambda **kw: captured.update(kw)
+            )
+        )
+        monkeypatch.setitem(sys.modules, "tasks", fake_tasks)
+
+        return svc, captured
+
+    def test_ingest_creates_analysis_for_chart_with_file(self, monkeypatch):
+        svc, captured = self._stub(monkeypatch)
+        resp = svc.ingest_report("b4c319228b363dc55611ca3e78cb1f8a", "ollama")
+        assert resp.created == 1
+        assert resp.skipped == 1  # the hasfile=False chart
+        assert resp.total_charts == 2
+        assert resp.report_reference == "b4c319228b363dc55611ca3e78cb1f8a"
+        assert resp.informativo_key == "zootecnia"
+        assert captured["png_file"] == "/app/uploads/chart.png"
+        assert captured["assessment_file"] == "/app/uploads/ficha.json"
+
+    def test_ingest_requires_resolvable_informativo(self, monkeypatch):
+        from api import report_service as svc
+        from api.exceptions import InvalidAnalysisInput
+
+        monkeypatch.setattr(
+            svc.report_ingestion,
+            "fetch_report_info",
+            lambda report_id: {"progs": "X@Área Desconhecida"},
+        )
+        with pytest.raises(InvalidAnalysisInput):
+            svc.ingest_report("b4c319228b363dc55611ca3e78cb1f8a", "ollama")
+
+    def test_unreachable_chart_does_not_abort_report(self, monkeypatch):
+        """A chart whose PNG download fails (VPN-blocked route) is marked
+        'failed' and the ingest continues — it must not abort the whole report."""
+        from api import report_service as svc
+        from api.exceptions import URLFetchError
+
+        monkeypatch.setattr(
+            svc.report_ingestion,
+            "fetch_report_info",
+            lambda report_id: {"progs": "X:2021@Zootecnia - Recursos Pesqueiros"},
+        )
+        monkeypatch.setattr(
+            svc.report_ingestion,
+            "fetch_charts",
+            lambda report_id: [
+                {"url_n": "00-doc.png", "id": "00-doc.png", "hasfile": True}
+            ],
+        )
+        monkeypatch.setattr(
+            svc.report_ingestion,
+            "fetch_chart_csv",
+            lambda png_url: {
+                "headers": [{"text": "Sigla", "value": "f1"}],
+                "data": [{"f1": "UFBA-A-5-Z"}],
+            },
+        )
+        monkeypatch.setattr(
+            svc.database,
+            "get_informativo_by_slug",
+            lambda slug: {"id": 7, "nome": "Zootecnia", "slug": slug},
+        )
+        monkeypatch.setattr(svc.database, "get_report_png_urls", lambda ref: set())
+        monkeypatch.setattr(
+            svc,
             "_resolve_informativo_inputs",
             lambda informativo_id: ("/app/uploads/ficha.json", 10, [], []),
         )
 
-        async def _fake_download(url, file_type, timeout=30):
-            return 101, f"/app/uploads/{file_type.value}_chart.png"
+        def _failing_download(url, file_type, timeout=30):
+            raise URLFetchError(f"Request timeout when downloading from: {url}")
 
         monkeypatch.setattr(
-            api_module.file_manager,
-            "download_file_from_url",
-            _fake_download,
-        )
-        monkeypatch.setattr(
-            api_module.file_manager,
-            "save_text_file",
-            lambda text, file_type, name, url=None: (
-                102,
-                f"/app/uploads/{name}.csv",
-            ),
+            svc.file_manager, "download_file_from_url_sync", _failing_download
         )
 
-        analysis_ids = iter([1000])
+        resp = svc.ingest_report("b4c319228b363dc55611ca3e78cb1f8a", "ollama")
+        assert resp.created == 0
+        assert resp.failed == 1
+        assert resp.charts[0].status == "failed"
 
-        monkeypatch.setattr(
-            api_module.database,
-            "create_analysis",
-            lambda **kw: next(analysis_ids),
-        )
-        monkeypatch.setattr(
-            api_module.database,
-            "create_analysis_file_mapping",
-            lambda **kw: None,
-        )
-        monkeypatch.setattr(
-            api_module.enqueue_analysis_for_sequential_processing,
-            "send",
-            lambda **kw: captured.update(kw),
-        )
 
-        return api_module, captured
+class TestIngestEndpoint:
+    """Single-report endpoint: delegates to the shared service."""
 
-    def test_ingest_creates_analysis_for_chart_with_file(self, monkeypatch):
-        api_module, captured = self._stub_ingest(monkeypatch)
+    def test_single_endpoint_delegates_to_service(self, monkeypatch):
+        from api import api as api_module
+        from api.models import ReportIngestResponse
+
+        captured = {}
+
+        def _fake_ingest(report_id, model, important_programs=None):
+            captured.update(
+                {
+                    "report_id": report_id,
+                    "model": model,
+                    "important_programs": important_programs,
+                }
+            )
+            return ReportIngestResponse(
+                report_id=report_id,
+                report_reference=report_id,
+                area="Zootecnia - Recursos Pesqueiros",
+                informativo_key="zootecnia",
+                total_charts=2,
+                created=1,
+                skipped=1,
+                failed=0,
+                charts=[],
+            )
+
+        monkeypatch.setattr(api_module.report_service, "ingest_report", _fake_ingest)
+
         client = TestClient(api_module.app)
         resp = client.post(
             "/api/reports/ingest",
@@ -177,91 +260,74 @@ class TestIngestEndpoint:
         assert resp.status_code == 201, resp.text
         body = resp.json()
         assert body["created"] == 1
-        assert body["skipped"] == 1  # the hasfile=False chart
-        assert body["total_charts"] == 2
-        assert body["report_reference"] == "b4c319228b363dc55611ca3e78cb1f8a"
-        assert body["informativo_key"] == "zootecnia"
-        assert captured["png_file"] == "/app/uploads/png_chart.png"
-        assert captured["assessment_file"] == "/app/uploads/ficha.json"
+        assert captured["report_id"] == "b4c319228b363dc55611ca3e78cb1f8a"
+        assert captured["model"] == "ollama"
 
-    def test_ingest_requires_resolvable_informativo(self, monkeypatch):
+    def test_single_endpoint_rejects_invalid_report_id(self, monkeypatch):
         from api import api as api_module
+        from api.exceptions import InvalidAnalysisInput
 
-        monkeypatch.setattr(
-            api_module.report_ingestion,
-            "fetch_report_info",
-            lambda report_id: {"progs": "X@Área Desconhecida"},
-        )
-        client = TestClient(api_module.app)
-        resp = client.post(
-            "/api/reports/ingest",
-            json={"report_id": "b4c319228b363dc55611ca3e78cb1f8a"},
-        )
-        assert resp.status_code == 400, resp.text
+        def _raise(report_id, model, important_programs=None):
+            raise InvalidAnalysisInput(f"Invalid report id: {report_id!r}")
 
-    def test_ingest_rejects_invalid_report_id(self, monkeypatch):
-        from api import api as api_module
+        monkeypatch.setattr(api_module.report_service, "ingest_report", _raise)
 
         client = TestClient(api_module.app)
         resp = client.post("/api/reports/ingest", json={"report_id": "not-a-md5!"})
         assert resp.status_code == 400, resp.text
 
-    def test_unreachable_chart_does_not_abort_report(self, monkeypatch):
-        """A chart whose PNG download fails (VPN-blocked route) is marked
-        'failed' and the ingest continues — it must not 400/500 the whole report."""
+
+class TestBatchEndpoint:
+    """List-of-reports endpoint: enqueues one batch actor message."""
+
+    def test_batch_enqueues_and_returns_202(self, monkeypatch):
         from api import api as api_module
-        from api.exceptions import URLFetchError
+
+        captured = {}
 
         monkeypatch.setattr(
-            api_module.report_ingestion,
-            "fetch_report_info",
-            lambda report_id: {"progs": "X:2021@Zootecnia - Recursos Pesqueiros"},
-        )
-        monkeypatch.setattr(
-            api_module.report_ingestion,
-            "fetch_charts",
-            lambda report_id: [{"url_n": "00-doc.png", "id": "00-doc.png", "hasfile": True}],
-        )
-        monkeypatch.setattr(
-            api_module.report_ingestion,
-            "fetch_chart_csv",
-            lambda png_url: {
-                "headers": [{"text": "Sigla", "value": "f1"}],
-                "data": [{"f1": "UFBA-A-5-Z"}],
-            },
-        )
-        monkeypatch.setattr(
-            api_module.database,
-            "get_informativo_by_slug",
-            lambda slug: {"id": 7, "nome": "Zootecnia", "slug": slug},
-        )
-        monkeypatch.setattr(
-            api_module.database,
-            "get_report_png_urls",
-            lambda ref: set(),
-        )
-        monkeypatch.setattr(
-            api_module,
-            "_resolve_informativo_inputs",
-            lambda informativo_id: ("/app/uploads/ficha.json", 10, [], []),
-        )
-
-        async def _failing_download(url, file_type, timeout=30):
-            raise URLFetchError(f"Request timeout when downloading from: {url}")
-
-        monkeypatch.setattr(
-            api_module.file_manager,
-            "download_file_from_url",
-            _failing_download,
+            api_module.ingest_report_batch,
+            "send",
+            lambda **kw: captured.update(kw),
         )
 
         client = TestClient(api_module.app)
         resp = client.post(
-            "/api/reports/ingest",
-            json={"report_id": "b4c319228b363dc55611ca3e78cb1f8a"},
+            "/api/reports/ingest-batch",
+            json={
+                "reports_list": [
+                    "b4c319228b363dc55611ca3e78cb1f8a",
+                    "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+                ],
+                "model": "ollama",
+            },
         )
-        assert resp.status_code == 201, resp.text
+        assert resp.status_code == 202, resp.text
         body = resp.json()
-        assert body["created"] == 0
-        assert body["failed"] == 1
-        assert body["charts"][0]["status"] == "failed"
+        assert body["total"] == 2
+        assert [i["report_id"] for i in body["items"]] == [
+            "b4c319228b363dc55611ca3e78cb1f8a",
+            "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+        ]
+        assert captured["reports"] == [
+            "b4c319228b363dc55611ca3e78cb1f8a",
+            "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+        ]
+        assert captured["model"] == "ollama"
+
+    def test_batch_rejects_invalid_report_id(self, monkeypatch):
+        from api import api as api_module
+
+        client = TestClient(api_module.app)
+        resp = client.post(
+            "/api/reports/ingest-batch",
+            json={"reports_list": ["not-a-md5!"]},
+        )
+        assert resp.status_code == 400, resp.text
+
+    def test_batch_requires_reports_list(self, monkeypatch):
+        from api import api as api_module
+
+        client = TestClient(api_module.app)
+        resp = client.post("/api/reports/ingest-batch", json={})
+        assert resp.status_code == 422, resp.text

@@ -462,6 +462,47 @@ class ReportIngestResponse(BaseModel):
     charts: List[ReportIngestItem] = Field(default_factory=list)
 
 
+class ReportBatchIngestRequest(BaseModel):
+    """Request to consume a list of APOEMA reports."""
+
+    reports_list: List[str] = Field(
+        ...,
+        description="APOEMA report ids (md5 in .../apoema-pg/view/<id>) to ingest, in order",
+        examples=[["b4c319228b363dc55611ca3e78cb1f8a", "7d8e..."]],
+    )
+    model: str = Field(
+        default=ModelType.OLLAMA.value,
+        description="LLM model to use for the chart analyses",
+        pattern="^(gemini|ollama)$",
+    )
+    important_programs: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Program identifiers (Sigla values) marked as important; passed to "
+            "every chart analysis of every report"
+        ),
+        examples=[["UFBA-A-5-Z"]],
+    )
+
+
+class ReportBatchIngestItem(BaseModel):
+    """Per-report outcome within a batch."""
+
+    report_id: str = Field(..., description="Report id")
+    status: str = Field(..., description="'ok' or 'error'")
+    message: Optional[str] = Field(None, description="Error detail when status='error'")
+    created: int = Field(0, description="Analyses created")
+    skipped: int = Field(0, description="Charts skipped")
+    failed: int = Field(0, description="Charts that failed")
+
+
+class ReportBatchIngestResponse(BaseModel):
+    """Result of enqueuing a list of reports for ingestion."""
+
+    total: int = Field(..., description="Number of reports enqueued")
+    items: List[ReportBatchIngestItem] = Field(default_factory=list)
+
+
 class FileUploadResponse(BaseModel):
     """Response model for file upload"""
 

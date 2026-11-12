@@ -188,16 +188,18 @@ def get_file_path(file_id: int) -> Optional[str]:
     return None
 
 
-async def download_file_from_url(
+def download_file_from_url_sync(
     url: str,
     file_type: FileType,
     timeout: float = 30,
 ) -> Tuple[int, str]:
     """
-    Download a file from a URL and save it to disk with deduplication
+    Download a file from a URL and save it to disk with deduplication (sync).
 
     If the same URL has already been downloaded, the existing file is reused
-    instead of downloading again.
+    instead of downloading again. This is the real implementation — a blocking
+    ``requests`` call — exposed synchronously so the Dramatiq batch actor can
+    call it directly (the async wrapper below delegates here).
 
     Args:
         url: URL to download file from
@@ -297,6 +299,15 @@ async def download_file_from_url(
         raise URLFetchError(f"HTTP error {e.response.status_code} when downloading from {url}")
     except Exception as e:
         raise URLFetchError(f"Failed to download file from {url}: {str(e)}")
+
+
+async def download_file_from_url(
+    url: str,
+    file_type: FileType,
+    timeout: float = 30,
+) -> Tuple[int, str]:
+    """Async wrapper over the sync download (blocking ``requests`` underneath)."""
+    return download_file_from_url_sync(url, file_type, timeout)
 
 
 def save_text_file(

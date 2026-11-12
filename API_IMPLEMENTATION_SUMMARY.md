@@ -255,6 +255,16 @@ Cliente faz polling:
     `png_csv` — todas agrupadas sob `report_reference` = id do relatório.
     **Idempotente**: re-ingerir o mesmo id pula gráficos que já têm análise sob
     aquela referência.
+- **POST /api/reports/ingest-batch**
+  - Request: `{reports_list: [id, ...], model?, important_programs?}`
+  - Response: `{total, items: [{report_id, status: "queued"}]}` (202 Accepted)
+  - Enfileira uma lista de relatórios para ingestão **um por vez**, em ordem, via
+    o actor Dramatiq `ingest_report_batch` (mesma fila `default` do worker de
+    análises). Cada relatório passa pelo mesmo fluxo do `/ingest` (charts → PNG +
+    CSV → uma análise `png_csv` por gráfico, agrupadas sob `report_reference` =
+    id). Um relatório que falha a resolução (ex. área sem ficha ingerida) é
+    registrado e pulado sem abortar os demais. Acompanhe o progresso pelo log do
+    worker (`[Reports] ...`) e agregação `GET /api/reports/{id}`.
 
 ### Zombie cleanup (recuperação automática de análises presas)
 - **POST /api/analysis/{analysis_id}/zombie-kill**
