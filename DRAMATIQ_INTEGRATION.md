@@ -53,6 +53,14 @@ Este guia descreve como integrar Dramatiq com o APOEMA para executar análises d
   O `converter_worker` consome na ordem; se o worker estiver fora do ar na hora, o
   RabbitMQ retém a mensagem até ele subir. Re-ingestão (startup ou
   `POST /api/fichas/ingest`) re-enfileira apenas documentos `pending`/`failed`.
+- A **ingestão de relatórios APOEMA** (`api/report_service.py`) roda na fila
+  `default`: o actor `ingest_report_batch` (em `tasks.py`, prioridade 5) recebe uma
+  lista de report ids e os consome **um por vez**, em ordem — cada relatório baixa
+  os charts e enfileira uma análise `png_csv` por gráfico através do gate FIFO
+  existente. Um relatório que falha a resolução é registrado (`[Reports] ...`) e
+  pulado, sem abortar os demais. O download do PNG tem timeout configurável
+  (`APOEMA_CHART_PNG_TIMEOUT`, default 30 s) porque a rota do chart fica atrás da
+  VPN da USP.
 
 ## Fluxo de Análise
 

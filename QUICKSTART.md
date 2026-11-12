@@ -265,6 +265,35 @@ The textual key is the slugified filename prefix (`CB_I_FICHA_*` → `cb_i`,
 `COMPUTACAO_FICHA_*` → `computacao`); the official CAPES area name lives in the
 static catalog `api/fichas_catalog.py`. Ingestion is idempotent via `drive_file_id`.
 
+## 📄 Report ingestion (published APOEMA reports → per-chart analyses)
+
+A published APOEMA report (`https://sistemas.prpg.usp.br/apoema-pg/view/<id>`) can be
+consumed and turned into one `png_csv` analysis per chart, all grouped under
+`report_reference` = report id:
+
+```bash
+# One report: derives the CAPES area (info-report), lists charts, downloads each
+# chart's PNG + CSV, and enqueues one png_csv analysis per chart.
+curl -X POST http://localhost:8000/api/reports/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"report_id": "b4c319228b363dc55611ca3e78cb1f8a", "model": "ollama"}'
+
+# A list of reports: enqueued and consumed one at a time, in order (202 immediate).
+curl -X POST http://localhost:8000/api/reports/ingest-batch \
+  -H "Content-Type: application/json" \
+  -d '{"reports_list": ["b4c319228b363dc55611ca3e78cb1f8a", "<another-id>"], "model": "ollama"}'
+
+# Track progress via the worker log and the aggregation endpoint:
+#   docker logs apoema-dramatiq-worker --since 5m | grep "\[Reports\]"
+curl -s http://localhost:8000/api/reports/b4c319228b363dc55611ca3e78cb1f8a
+```
+
+Both endpoints are idempotent (re-ingesting the same id skips already-analyzed charts).
+The CAPES area is resolved by slug to the ingested ficha (`area_code_from_name`, which
+normalizes `-` vs `/`). The chart PNG route is behind the USP VPN and may not answer
+outside it — the download has a configurable timeout (`APOEMA_CHART_PNG_TIMEOUT`, default
+30s) and a per-chart failure is recorded as `failed` without aborting the report/batch.
+
 ## 💻 Using Commands Without Makefile
 
 If you prefer to skip the Makefile, you can use uv directly:

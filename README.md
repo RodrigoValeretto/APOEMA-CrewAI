@@ -267,6 +267,26 @@ do Drive e as ingere no pipeline de informativos+conversão — sem upload manua
 
 Ver QUICKSTART.md (seção "Ficha ingestion from Google Drive") e API_IMPLEMENTATION_SUMMARY.md.
 
+## 📥 Ingestão de Relatórios APOEMA (por id ou em lote)
+
+O sistema consome relatórios publicados no APOEMA (`https://sistemas.prpg.usp.br/apoema-pg/view/<id>`)
+e enfileira **uma análise `png_csv` por gráfico**, todas agrupadas sob
+`report_reference` = id do relatório:
+
+- **Endpoint único**: `POST /api/reports/ingest` com `{"report_id": "<id>", "model": "ollama"}` —
+  lê `info-report` (deriva a área CAPES, ex. "Zootecnia - Recursos Pesqueiros") e `charts`
+  (lista de gráficos), baixa PNG + CSV de cada gráfico e enfileira a análise.
+- **Endpoint em lote**: `POST /api/reports/ingest-batch` com `{"reports_list": ["<id1>", "<id2>", ...]}`
+  enfileira a lista num actor Dramatiq que consome os relatórios **um por vez**, em ordem (202 imediato).
+- **Idempotente**: re-ingerir o mesmo id pula gráficos que já têm análise sob aquela referência.
+- **A área CAPES vira o assessment**: o nome da área (`@Zootecnia - Recursos Pesqueiros`) é resolvido
+  por slug para a ficha já ingerida (catálogo `FICHA_AREAS` + `area_code_from_name`).
+- **VPN da USP**: a rota do PNG (`/chart/...`, porta 443) fica atrás da VPN e pode não responder fora
+  dela — o download tem timeout configurável (`APOEMA_CHART_PNG_TIMEOUT`, default 30 s) e uma falha
+  por gráfico é registrada como `failed` sem abortar o relatório/lote.
+
+Ver QUICKSTART.md (seção "Report ingestion") e API_IMPLEMENTATION_SUMMARY.md.
+
 ## 📁 Estrutura do Projeto
 
 ```
