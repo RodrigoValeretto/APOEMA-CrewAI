@@ -82,6 +82,21 @@ def area_name(code: str) -> Optional[str]:
     return FICHA_AREAS.get(code)
 
 
+def area_code_from_name(name: str) -> Optional[str]:
+    """Reverse lookup: official CAPES area name -> area code.
+
+    Matches on the slugified name so punctuation variants still resolve to the
+    same code (APOEMA's ``info-report`` uses ``-`` where the catalog uses ``/``,
+    e.g. ``"Zootecnia - Recursos Pesqueiros"`` vs ``"Zootecnia / Recursos
+    Pesqueiros"`` — both slugify to ``zootecnia_recursos_pesqueiros``).
+    """
+    target = slugify(name)
+    for code, official in FICHA_AREAS.items():
+        if slugify(official) == target:
+            return code
+    return None
+
+
 def parse_ficha_filename(name: str):
     """Parse a drive filename into (area_code, kind) or None if unrecognized.
 

@@ -13,7 +13,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, JSONResponse
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 import asyncio
 import contextlib
 import os
@@ -51,6 +51,12 @@ from .models import (
     FichaDeParaListResponse,
     ReportResponse,
     ReportAnalysisItem,
+    ReportIngestRequest,
+    ReportIngestResponse,
+    ReportIngestItem,
+    ReportBatchIngestRequest,
+    ReportBatchIngestResponse,
+    ReportBatchIngestItem,
 )
 from .constants import (
     AnalysisType,
@@ -82,7 +88,7 @@ from .validators import (
     slugify,
 )
 from .middleware import setup_middleware
-from . import database, file_manager
+from . import database, file_manager, report_ingestion, report_service
 from zombie_kill import (
     kill_zombie_analysis as zombie_kill_single,
     cleanup_zombies as zombie_cleanup_all,
@@ -90,10 +96,11 @@ from zombie_kill import (
 )
 from tasks import (
     enqueue_analysis_for_sequential_processing,
+    ingest_report_batch,
 )
 from conversion_tasks import convert_informativo_document
 from . import drive_ingestion
-from .fichas_catalog import FICHA_AREAS, ficha_key
+from .fichas_catalog import FICHA_AREAS, ficha_key, area_code_from_name
 
 
 config = get_config()
@@ -840,6 +847,100 @@ async def get_report_endpoint(report_reference: str):
             analyses=items,
         )
 
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/reports/ingest",
+    response_model=ReportIngestResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Analysis"],
+)
+async def ingest_report_endpoint(request: ReportIngestRequest):
+    """Consume a published APOEMA report and enqueue one analysis per chart.
+
+    Given a report id (the md5 in ``.../apoema-pg/view/<id>``), this endpoint:
+
+    1. Reads ``info-report`` to learn the CAPES area name and resolves it to an
+       informativo (by textual key) whose converted ficha becomes the assessment
+       source for every chart analysis.
+    2. Reads ``charts`` to list the report's charts.
+    3. For each chart that has a file, downloads the PNG and fetches its CSV,
+       then creates a ``png_csv`` analysis (all grouped under the same
+       ``report_reference`` = report id) and enqueues it.
+
+    Idempotent: re-ingesting the same report id skips charts that already have
+    an analysis under that reference.
+    """
+    try:
+        # The service runs blocking ``requests``; offload to a thread so the
+        # async endpoint does not block the event loop.
+        response = await asyncio.to_thread(
+            report_service.ingest_report,
+            request.report_id,
+            request.model,
+            request.important_programs,
+        )
+        return response
+
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/reports/ingest-batch",
+    response_model=ReportBatchIngestResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["Analysis"],
+)
+async def ingest_reports_batch_endpoint(request: ReportBatchIngestRequest):
+    """Enqueue a list of APOEMA reports to be ingested one at a time.
+
+    The batch is processed asynchronously by a Dramatiq actor
+    (``ingest_report_batch``): each report id in ``reports_list`` is consumed
+    (charts fetched, PNGs/CSVs downloaded, one ``png_csv`` analysis per chart,
+    all grouped under ``report_reference`` = report id) in list order. A report
+    that fails to resolve is recorded and skipped without aborting the rest.
+
+    Returns 202 immediately with the list of report ids accepted; track the
+    per-report outcome through the worker log (``[Reports] ...``) and the
+    ``GET /api/reports/{report_id}`` aggregation endpoint.
+    """
+    try:
+        # Validate the ids up front so a malformed entry fails fast, before
+        # consuming any worker time.
+        for report_id in request.reports_list:
+            if not report_ingestion.validate_report_id(report_id):
+                raise InvalidAnalysisInput(
+                    f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
+                )
+
+        ingest_report_batch.send(
+            reports=request.reports_list,
+            model=request.model,
+            important_programs=request.important_programs,
+        )
+
+        items = [
+            ReportBatchIngestItem(report_id=rid, status="queued")
+            for rid in request.reports_list
+        ]
+        return ReportBatchIngestResponse(
+            total=len(request.reports_list),
+            items=items,
+        )
+
+    except ApoemaException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

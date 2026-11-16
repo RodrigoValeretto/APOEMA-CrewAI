@@ -529,6 +529,8 @@ ab -n 100 -c 10 http://localhost:8000/health
 - [ ] `report_reference` agrupa análises; `GET /api/reports/{ref}` agrega (vazio = `{total: 0, analyses: []}`)
 - [ ] `POST /api/analysis/{id}/zombie-kill` marca `failed` + purga filas
 - [ ] `POST /api/zombies/cleanup` mata zumbis antigos; watchdog desligável (`ZOMBIE_WATCHDOG_INTERVAL=0`)
+- [ ] `POST /api/reports/ingest` consome um relatório APOEMA pelo id → análises `png_csv` agrupadas
+- [ ] `POST /api/reports/ingest-batch` enfileira uma lista de relatórios → ingestão um por vez (202)
 
 ---
 
@@ -553,6 +555,42 @@ curl http://localhost:8000/api/reports/relatorio-2025-cc
 # Referência sem análises retorna vazio, NÃO 404
 curl http://localhost:8000/api/reports/relatorio-inexistente
 # → {"report_reference": "relatorio-inexistente", "total": 0, "analyses": []}
+```
+
+## 🧪 Testando Report Ingest (consumir um relatório APOEMA publicado)
+
+```bash
+# Consome o relatório pelo id (md5 da URL .../apoema-pg/view/<id>) e enfileira
+# uma análise png_csv por gráfico, todas sob report_reference = id do relatório.
+curl -X POST http://localhost:8000/api/reports/ingest \
+  -H "Content-Type: application/json" \
+  -d "{\"report_id\": \"b4c319228b363dc55611ca3e78cb1f8a\"}"
+
+# → {report_id, report_reference, area: "Zootecnia - Recursos Pesqueiros",
+#    informativo_key: "zootecnia", total_charts: 57, created: N, skipped: M,
+#    failed: 0, charts: [{chart_id, png_url, analysis_id, status}, ...]}
+
+# Pré-requisito: a ficha da área já ingerida (POST /api/fichas/ingest) e convertida.
+# Re-ingerir o mesmo id é idempotente: gráficos já analisados são "skipped".
+
+# Acompanha as análises do relatório depois:
+curl http://localhost:8000/api/reports/b4c319228b363dc55611ca3e78cb1f8a
+```
+
+## 🧪 Testando Report Ingest em lote (lista de relatórios)
+
+```bash
+# Enfileira uma lista de relatórios para ingestão um por vez (202 imediato).
+curl -X POST http://localhost:8000/api/reports/ingest-batch \
+  -H "Content-Type: application/json" \
+  -d "{\"reports_list\": [\"b4c319228b363dc55611ca3e78cb1f8a\", \"<outro-id>\"], \"model\": \"ollama\"}"
+
+# → {"total": 2, "items": [{"report_id": "...", "status": "queued"}, ...]}
+
+# O worker processa a lista em ordem; acompanhe pelo log:
+#   docker logs apoema-dramatiq-worker --since 5m | grep "\[Reports\]"
+# e depois agregue cada relatório:
+#   curl http://localhost:8000/api/reports/<id>
 ```
 
 ## 🧪 Testando Zombie Cleanup (recuperação de análise presa)
@@ -648,6 +686,6 @@ curl -X POST http://localhost:8000/api/analysis \
 
 ---
 
-**Última atualização:** Novembro 2026 (fixes: `DRIVE_*` wired no docker-compose, `informativo_key` normalizado antes da validação, converter worker `--threads 1` p/ evitar OOM)
+**Última atualização:** Novembro 2026 (fixes: `DRIVE_*` wired no docker-compose, `informativo_key` normalizado antes da validação, converter worker `--threads 1` p/ evitar OOM; **report ingest**: `POST /api/reports/ingest` consome um relatório APOEMA pelo id e enfileira uma análise por gráfico; **batch**: `POST /api/reports/ingest-batch` enfileira uma lista de relatórios para ingestão um por vez)
 **Versão:** 2.3.0
 **Status:** Pronto para testes ✅

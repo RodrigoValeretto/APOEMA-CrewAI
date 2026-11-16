@@ -243,6 +243,28 @@ Cliente faz polling:
     inputs). Ordenado por ordem de criação (`id`).
   - Retorna `{total: 0, analyses: []}` (não 404) quando nenhuma análise casa com a
     referência — um relatório recém-criado simplesmente ainda não tem análises.
+- **POST /api/reports/ingest**
+  - Request: `{report_id, model?, important_programs?}`
+  - Response: `{report_id, report_reference, area, informativo_key, total_charts,
+    created, skipped, failed, charts[]}`
+  - Consome um relatório APOEMA publicado a partir do seu id (o md5 na URL
+    `https://sistemas.prpg.usp.br/apoema-pg/view/<id>`): lê `info-report` para
+    derivar a área CAPES e a resolve num informativo (cuja ficha convertida vira o
+    assessment), lê `charts` para listar os gráficos e, para cada gráfico com
+    arquivo, baixa o PNG e obtém o CSV (`chartcsv`) e cria/enfileira uma análise
+    `png_csv` — todas agrupadas sob `report_reference` = id do relatório.
+    **Idempotente**: re-ingerir o mesmo id pula gráficos que já têm análise sob
+    aquela referência.
+- **POST /api/reports/ingest-batch**
+  - Request: `{reports_list: [id, ...], model?, important_programs?}`
+  - Response: `{total, items: [{report_id, status: "queued"}]}` (202 Accepted)
+  - Enfileira uma lista de relatórios para ingestão **um por vez**, em ordem, via
+    o actor Dramatiq `ingest_report_batch` (mesma fila `default` do worker de
+    análises). Cada relatório passa pelo mesmo fluxo do `/ingest` (charts → PNG +
+    CSV → uma análise `png_csv` por gráfico, agrupadas sob `report_reference` =
+    id). Um relatório que falha a resolução (ex. área sem ficha ingerida) é
+    registrado e pulado sem abortar os demais. Acompanhe o progresso pelo log do
+    worker (`[Reports] ...`) e agregação `GET /api/reports/{id}`.
 
 ### Zombie cleanup (recuperação automática de análises presas)
 - **POST /api/analysis/{analysis_id}/zombie-kill**

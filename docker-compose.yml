@@ -217,6 +217,9 @@ services:
       # and purge the RabbitMQ queues (30 min = longest legitimate run).
       ZOMBIE_WATCHDOG_INTERVAL: ${ZOMBIE_WATCHDOG_INTERVAL:-1800}
       ZOMBIE_WATCHDOG_THRESHOLD: ${ZOMBIE_WATCHDOG_THRESHOLD:-1800}
+      # Chart PNG download timeout (report ingest); short keeps a VPN-blocked
+      # 443 chart route from stalling the whole ingest.
+      APOEMA_CHART_PNG_TIMEOUT: ${APOEMA_CHART_PNG_TIMEOUT:-30}
       PYTHONUNBUFFERED: 1
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
