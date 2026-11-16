@@ -200,18 +200,18 @@ Cliente faz polling:
 
 ### Analysis Management
 - **POST /api/analysis**
-  - Body: `{assessment_file | assessment_file_id | assessment_file_url | informativo_id | informativo_key,
+  - Body: `{assessment_file | assessment_file_id | assessment_file_url | corpus_id | corpus_key,
     pdf_path, png_path, csv_path, model, important_programs[], report_reference?}`
-  - `informativo_id` (alternativo ao assessment): usa a ficha convertida mais recente
-    do informativo como `assessment_file` e anexos/adendos convertidos como fontes de
+  - `corpus_id` (alternativo ao assessment): usa a ficha convertida mais recente
+    do corpus da área como `assessment_file` e anexos/adendos convertidos como fontes de
     Knowledge (retrieval) — campos de assessment são mutuamente exclusivos com ele
-  - `informativo_key` (chave textual da área, alternativo a `informativo_id`): string
-    curta (slug) que resolve a `informativo_id` — ex. `"computacao"`, `"cb_i"`. Mutuamente
-    exclusivo com `informativo_id` e com as fontes de assessment explícitas
+  - `corpus_key` (chave textual da área, alternativo a `corpus_id`): string
+    curta (slug) que resolve a `corpus_id` — ex. `"computacao"`, `"cb_i"`. Mutuamente
+    exclusivo com `corpus_id` e com as fontes de assessment explícitas
   - `report_reference` (opcional): string que agrupa esta análise num relatório;
     várias imagens de um mesmo relatório compartilham o mesmo `report_reference`
     para serem recuperadas juntas depois
-  - Response: `{id, type, status, created_at, informativo_id, report_reference}` (201 Created)
+  - Response: `{id, type, status, created_at, corpus_id, report_reference}` (201 Created)
   - Cria analysis no BD, envia Dramatiq task
 
 - **GET /api/analysis**
@@ -220,12 +220,15 @@ Cliente faz polling:
   - Paginado, filtrado, ordenado por created_at DESC
 
 - **GET /api/analysis/{analysis_id}**
-  - Response: `{id, type, status, created_at, updated_at, informativo_id, report_reference, results[...], progress{...}}`
-  - Detalhes completos com todos os resultados de tasks
+  - Response: `{id, type, status, created_at, updated_at, corpus_id, report_reference, results[...], progress{...}}`
+  - Detalhes completos com todos os resultados de tasks. Cada item de `results[]`
+    traz `{id, task_name, result, result_json, created_at}` — resultados que são um
+    objeto JSON vêm parseados em `result_json` (com `result` = null); os demais
+    mantêm o texto bruto em `result` (com `result_json` = null).
 
 - **GET /api/analysis/{analysis_id}/results**
   - Query: `task_name=task_1_data_analysis` (opcional)
-  - Response: `{analysis_id, results[...]}`
+  - Response: `{analysis_id, results[...]}` — cada item com `result`/`result_json`
   - Lista apenas os resultados de tasks
 
 - **DELETE /api/analysis/{analysis_id}**
@@ -237,7 +240,7 @@ Cliente faz polling:
   - Response: `{report_reference, total, analyses[]}`
   - Agrega todas as análises que compartilham o mesmo `report_reference` num único
     array. Cada item traz `{id, type, status, created_at, important_programs,
-    informativo_id, assessment_path, pdf_path, png_path, csv_path, results[]}` — os
+    corpus_id, assessment_path, pdf_path, png_path, csv_path, results[]}` — os
     campos `*_path` permitem relacionar cada análise à imagem/arquivo de origem
     (via `analysis_file_mapping`, a mesma fonte que o retry usa para reconstruir
     inputs). Ordenado por ordem de criação (`id`).
@@ -245,7 +248,7 @@ Cliente faz polling:
     referência — um relatório recém-criado simplesmente ainda não tem análises.
 - **POST /api/reports/ingest**
   - Request: `{report_id, model?, important_programs?}`
-  - Response: `{report_id, report_reference, area, informativo_key, total_charts,
+  - Response: `{report_id, report_reference, area, corpus_key, total_charts,
     created, skipped, failed, charts[]}`
   - Consome um relatório APOEMA publicado a partir do seu id (o md5 na URL
     `https://sistemas.prpg.usp.br/apoema-pg/view/<id>`): lê `info-report` para
@@ -402,7 +405,8 @@ CREATE TABLE informativo_documents (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
--- V7 também adiciona: ALTER TABLE analysis ADD COLUMN informativo_id INTEGER REFERENCES informativos(id);
+-- V7 também adiciona: ALTER TABLE analysis ADD COLUMN corpus_id INTEGER REFERENCES informativos(id);
+--   (originalmente informativo_id; renomeada para corpus_id na V11)
 ```
 
 ---

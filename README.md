@@ -77,7 +77,7 @@ Entrada: PNG plot + CSV data
 #### Fluxo 3: Conversão de Fichas CAPES (PDF/XLSX → JSON) via Informativo
 As fichas de avaliação da CAPES (PDF) e anexos/adendos (XLSX) são convertidos para um
 JSON enriquecido em background e agrupados por **informativo** (corpus da área, ex.
-"Ciência da Computação"). Uma análise pode ser disparada direto pelo `informativo_id`:
+"Ciência da Computação"). Uma análise pode ser disparada direto pelo `corpus_id`:
 a ficha convertida vira o `assessment_file` e anexos/adendos entram como fontes de
 Knowledge (retrieval automático) — ver seção de endpoints abaixo.
 ```
@@ -85,7 +85,7 @@ Upload PDF/XLSX → POST /api/informativos/{id}/documentos (kind=ficha|anexo|ade
   ↓ fila dedicada 'conversion' (converter_worker, docling)
 JSON enriquecido (uploads/converted/doc_{id}.json) registrado em analysis_files
   ↓
-POST /api/analysis {"informativo_id": N} → ficha = assessment + anexos = Knowledge
+POST /api/analysis {"corpus_id": N} → ficha = assessment + anexos = Knowledge
 ```
 
 > **Índice de Knowledge (cache):** a coleção do ChromaDB é endereçada pelo **conteúdo**
@@ -262,8 +262,8 @@ do Drive e as ingere no pipeline de informativos+conversão — sem upload manua
   ingere a pasta a cada subida (idempotente por `drive_file_id`).
 - **Endpoint**: `POST /api/fichas/ingest` re-roda sob demanda; `GET /api/fichas`
   lista o de-para (código → nome oficial CAPES → chave textual → ids/status).
-- **Chave textual**: `POST /api/analysis` aceita `informativo_key` (ex.
-  `"computacao"`, `"cb_i"`) como alternativa ao `informativo_id`.
+- **Chave textual**: `POST /api/analysis` aceita `corpus_key` (ex.
+  `"computacao"`, `"cb_i"`) como alternativa ao `corpus_id`.
 
 Ver QUICKSTART.md (seção "Ficha ingestion from Google Drive") e API_IMPLEMENTATION_SUMMARY.md.
 

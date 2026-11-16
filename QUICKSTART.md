@@ -229,10 +229,10 @@ curl -X POST http://localhost:8000/api/informativos/1/documentos \
 # 3) Wait until GET /api/informativos/1/documentos shows status "completed"
 #    (poll every ~10s; each PDF takes ~10-90s on the converter worker)
 
-# 4) Run the analysis from the informativo (ficha = assessment, anexos = Knowledge)
+# 4) Run the analysis from the corpus (ficha = assessment, anexos = Knowledge)
 curl -X POST http://localhost:8000/api/analysis \
   -H "Content-Type: application/json" \
-  -d '{"informativo_id": 1, "model": "gemini"}'
+  -d '{"corpus_id": 1, "model": "gemini"}'
 ```
 
 The converted JSON is stored at `uploads/converted/doc_{id}.json` and registered
@@ -255,10 +255,10 @@ curl -s http://localhost:8000/api/fichas
 # -> {"total": 50, "items": [{"codigo": "COMPUTACAO", "nome": "Computação",
 #                              "chave": "computacao", "informativo_id": 3, ...}]}
 
-# 3) Trigger an analysis by the textual key (resolves to informativo_id by slug)
+# 3) Trigger an analysis by the textual key (resolves to corpus_id by slug)
 curl -X POST http://localhost:8000/api/analysis \
   -H "Content-Type: application/json" \
-  -d '{"informativo_key": "computacao", "model": "gemini"}'
+  -d '{"corpus_key": "computacao", "model": "gemini"}'
 ```
 
 The textual key is the slugified filename prefix (`CB_I_FICHA_*` → `cb_i`,
