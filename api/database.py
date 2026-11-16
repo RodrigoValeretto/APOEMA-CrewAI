@@ -423,7 +423,13 @@ def save_analysis_result(
     """
     from .result_processing import split_result_json
 
+    import json as _json
+
     result_text, result_json = split_result_json(result)
+    # psycopg cannot adapt a raw Python dict to a JSONB column (it raises
+    # "cannot adapt type 'dict'"); serialize it to a JSON string so the
+    # placeholder binds correctly.
+    result_json_param = _json.dumps(result_json) if result_json is not None else None
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -440,7 +446,7 @@ def save_analysis_result(
                     VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (analysis_id, task_name, result_text, result_json, datetime.now()),
+                    (analysis_id, task_name, result_text, result_json_param, datetime.now()),
                 )
                 result_id = cur.fetchone()[0]
                 conn.commit()
