@@ -37,7 +37,7 @@ def create_analysis(
     status: str = AnalysisStatus.PENDING.value,
     model: Optional[str] = None,
     important_programs: Optional[List[str]] = None,
-    informativo_id: Optional[int] = None,
+    corpus_id: Optional[int] = None,
     report_reference: Optional[str] = None,
 ) -> int:
     """
@@ -49,6 +49,7 @@ def create_analysis(
         model: LLM model used for the analysis (stored for retry support)
         important_programs: Program identifiers marked as important by the user
             (Sigla values from the plot CSV); stored for retry support
+        corpus_id: Corpus (CAPES area) that sourced this analysis (optional)
         report_reference: Report identifier this analysis belongs to (optional)
 
     Returns:
@@ -62,7 +63,7 @@ def create_analysis(
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO analysis (type, status, model, important_programs, informativo_id, report_reference, created_at, updated_at)
+                    INSERT INTO analysis (type, status, model, important_programs, corpus_id, report_reference, created_at, updated_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
@@ -71,7 +72,7 @@ def create_analysis(
                         status,
                         model,
                         important_programs,
-                        informativo_id,
+                        corpus_id,
                         report_reference,
                         datetime.now(),
                         datetime.now(),
@@ -103,7 +104,7 @@ def get_analysis(analysis_id: int) -> Dict[str, Any]:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     """
-                    SELECT id, type, status, model, important_programs, informativo_id, report_reference, created_at, updated_at
+                    SELECT id, type, status, model, important_programs, corpus_id, report_reference, created_at, updated_at
                     FROM analysis
                     WHERE id = %s
                     """,
@@ -138,7 +139,7 @@ def get_analyses_by_report(report_reference: str) -> List[Dict[str, Any]]:
                 cur.execute(
                     """
                     SELECT id, type, status, model, important_programs,
-                           informativo_id, report_reference, created_at, updated_at
+                           corpus_id, report_reference, created_at, updated_at
                     FROM analysis
                     WHERE report_reference = %s
                     ORDER BY id
@@ -405,6 +406,10 @@ def save_analysis_result(
     """
     Save a task result to analysis_results table
 
+    The raw result is post-processed: a JSON-object output is stored as the
+    parsed object in ``result_json`` with ``result`` NULL; anything else keeps
+    its raw text in ``result`` (``result_json`` NULL).
+
     Args:
         analysis_id: ID of the analysis
         task_name: Name of the task
@@ -416,6 +421,9 @@ def save_analysis_result(
     Raises:
         DatabaseError: If database operation fails
     """
+    from .result_processing import split_result_json
+
+    result_text, result_json = split_result_json(result)
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -428,11 +436,11 @@ def save_analysis_result(
                 )
                 cur.execute(
                     """
-                    INSERT INTO analysis_results (analysis_id, task_name, result, created_at)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO analysis_results (analysis_id, task_name, result, result_json, created_at)
+                    VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (analysis_id, task_name, result, datetime.now()),
+                    (analysis_id, task_name, result_text, result_json, datetime.now()),
                 )
                 result_id = cur.fetchone()[0]
                 conn.commit()
@@ -470,7 +478,7 @@ def get_analysis_results(
 
                 cur.execute(
                     f"""
-                    SELECT id, analysis_id, task_name, result, created_at
+                    SELECT id, analysis_id, task_name, result, result_json, created_at
                     FROM analysis_results
                     {where_clause}
                     ORDER BY created_at ASC

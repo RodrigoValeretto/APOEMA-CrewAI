@@ -154,7 +154,7 @@ class TestReportService:
         assert resp.skipped == 1  # the hasfile=False chart
         assert resp.total_charts == 2
         assert resp.report_reference == "b4c319228b363dc55611ca3e78cb1f8a"
-        assert resp.informativo_key == "zootecnia"
+        assert resp.corpus_key == "zootecnia"
         assert captured["png_file"] == "/app/uploads/chart.png"
         assert captured["assessment_file"] == "/app/uploads/ficha.json"
 
@@ -242,7 +242,7 @@ class TestIngestEndpoint:
                 report_id=report_id,
                 report_reference=report_id,
                 area="Zootecnia - Recursos Pesqueiros",
-                informativo_key="zootecnia",
+                corpus_key="zootecnia",
                 total_charts=2,
                 created=1,
                 skipped=1,

@@ -273,8 +273,8 @@ def validate_analysis_request(
     csv_file_id: int = None,
     csv_url: str = None,
     model: str = None,
-    informativo_id: int = None,
-    informativo_key: Optional[str] = None,
+    corpus_id: int = None,
+    corpus_key: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """
     Validate complete analysis request
@@ -315,20 +315,20 @@ def validate_analysis_request(
         )
 
         # Validate that assessment input comes from ONE source: either an
-        # explicit assessment file (path/ID/URL) or an informativo (by id or by
+        # explicit assessment file (path/ID/URL) or a corpus (by id or by
         # textual key) whose converted ficha plays that role.
         has_assessment_source = bool(assessment_file or assessment_file_id or assessment_file_url)
-        informativo_source = informativo_id or informativo_key
-        if informativo_id and informativo_key:
-            return False, "informativo_id and informativo_key are mutually exclusive"
-        if informativo_source and has_assessment_source:
+        corpus_source = corpus_id or corpus_key
+        if corpus_id and corpus_key:
+            return False, "corpus_id and corpus_key are mutually exclusive"
+        if corpus_source and has_assessment_source:
             return (
                 False,
-                "informativo_id / informativo_key cannot be combined with "
+                "corpus_id / corpus_key cannot be combined with "
                 "assessment_file / assessment_file_id / assessment_file_url",
             )
-        if not informativo_source and not has_assessment_source:
-            return False, "assessment_file, assessment_file_id, assessment_file_url, informativo_id, or informativo_key must be provided"
+        if not corpus_source and not has_assessment_source:
+            return False, "assessment_file, assessment_file_id, assessment_file_url, corpus_id, or corpus_key must be provided"
 
         # Validate URLs
         if assessment_file_url:

@@ -1,7 +1,7 @@
-"""Regression: informativo_key resolution must normalize before validation.
+"""Regression: corpus_key resolution must normalize before validation.
 
-The endpoint resolves ``informativo_key`` -> ``informativo_id`` but, before the
-fix, left ``informativo_key`` set — so a valid key-only request then failed the
+The endpoint resolves ``corpus_key`` -> ``corpus_id`` but, before the
+fix, left ``corpus_key`` set — so a valid key-only request then failed the
 "mutually exclusive" check with 400. This pins the corrected behavior.
 """
 from fastapi.testclient import TestClient
@@ -40,25 +40,25 @@ def _patch_create_flow(monkeypatch):
     )
 
 
-def test_informativo_key_resolves_and_creates(monkeypatch):
-    """A request with only `informativo_key` must NOT trip the mutually-exclusive
+def test_corpus_key_resolves_and_creates(monkeypatch):
+    """A request with only `corpus_key` must NOT trip the mutually-exclusive
     check after the key is resolved to an id."""
     _patch_create_flow(monkeypatch)
     client = TestClient(api_module.app)
 
     resp = client.post(
         "/api/analysis",
-        json={"informativo_key": "computacao", "model": "ollama"},
+        json={"corpus_key": "computacao", "model": "ollama"},
     )
 
     assert resp.status_code == 201, resp.text
     body = resp.json()
     assert body["id"] == 1
     # The resolved id is what gets stored; the key is normalized away.
-    assert body["informativo_id"] == 27
+    assert body["corpus_id"] == 27
 
 
-def test_informativo_key_unknown_still_400(monkeypatch):
+def test_corpus_key_unknown_still_400(monkeypatch):
     """An unknown key keeps failing with INVALID_INPUT (no regression)."""
     monkeypatch.setattr(
         api_module.database, "get_informativo_by_slug", lambda slug: None
@@ -67,7 +67,7 @@ def test_informativo_key_unknown_still_400(monkeypatch):
 
     resp = client.post(
         "/api/analysis",
-        json={"informativo_key": "nao_existe", "model": "ollama"},
+        json={"corpus_key": "nao_existe", "model": "ollama"},
     )
 
     assert resp.status_code == 400
