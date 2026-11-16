@@ -81,24 +81,24 @@ class AnalysisRequest(BaseModel):
         ),
         examples=[["UFPA-A-5-CC", "UFBA-A-5-CC"]],
     )
-    informativo_id: Optional[int] = Field(
+    corpus_id: Optional[int] = Field(
         None,
         description=(
-            "ID of an informativo (CAPES area corpus). The informativo's converted "
-            "ficha is used as the assessment file and its converted anexos/adendos "
-            "are attached as extra Knowledge sources (retrieval). Alternative to "
-            "assessment_file / assessment_file_id / assessment_file_url. Mutually "
-            "exclusive with informativo_key."
+            "ID of a corpus (CAPES area). The corpus's converted ficha is used "
+            "as the assessment file and its converted anexos/adendos are "
+            "attached as extra Knowledge sources (retrieval). Alternative to "
+            "assessment_file / assessment_file_id / assessment_file_url. "
+            "Mutually exclusive with corpus_key."
         ),
         examples=[1],
     )
-    informativo_key: Optional[str] = Field(
+    corpus_key: Optional[str] = Field(
         None,
         description=(
-            "Textual key of a CAPES ficha area (the informativo slug, e.g. "
-            "'computacao', 'cb_i'). Resolved to informativo_id by slug; the "
+            "Textual key of a CAPES ficha area (the corpus slug, e.g. "
+            "'computacao', 'cb_i'). Resolved to corpus_id by slug; the "
             "converted ficha becomes the assessment file. Alternative to "
-            "informativo_id and to assessment_file / assessment_file_id / "
+            "corpus_id and to assessment_file / assessment_file_id / "
             "assessment_file_url."
         ),
         examples=["computacao"],
@@ -123,7 +123,7 @@ class AnalysisRequest(BaseModel):
         }
     }
 
-    @validator("assessment_file", "pdf_path", "png_path", "csv_path", "assessment_file_url", "pdf_url", "png_url", "csv_url", "report_reference", "informativo_key", pre=True)
+    @validator("assessment_file", "pdf_path", "png_path", "csv_path", "assessment_file_url", "pdf_url", "png_url", "csv_url", "report_reference", "corpus_key", pre=True)
     def empty_str_to_none(cls, v):
         if v == "":
             return None
@@ -188,9 +188,9 @@ class AnalysisResponse(BaseModel):
         None,
         description="Program identifiers marked as important by the user",
     )
-    informativo_id: Optional[int] = Field(
+    corpus_id: Optional[int] = Field(
         None,
-        description="Informativo (CAPES area corpus) that sourced this analysis, if any",
+        description="Corpus (CAPES area) that sourced this analysis, if any",
     )
     report_reference: Optional[str] = Field(
         None,
@@ -214,7 +214,12 @@ class TaskResult(BaseModel):
 
     id: int = Field(..., description="Result ID")
     task_name: str = Field(..., description="Name of the task that produced this result")
-    result: str = Field(..., description="Result content")
+    result: Optional[str] = Field(
+        None, description="Raw result content (null when the result is a JSON object)"
+    )
+    result_json: Optional[dict] = Field(
+        None, description="Parsed JSON object of the result (null for non-JSON results)"
+    )
     created_at: datetime = Field(..., description="Creation timestamp")
 
     model_config = {
@@ -223,6 +228,7 @@ class TaskResult(BaseModel):
                 "id": 101,
                 "task_name": "task_1_data_analysis",
                 "result": "Critérios CAPES extraídos com sucesso...",
+                "result_json": None,
                 "created_at": "2024-06-09T12:05:00Z",
             }
         }
@@ -265,9 +271,9 @@ class AnalysisDetailResponse(BaseModel):
         None,
         description="Program identifiers marked as important by the user",
     )
-    informativo_id: Optional[int] = Field(
+    corpus_id: Optional[int] = Field(
         None,
-        description="Informativo (CAPES area corpus) that sourced this analysis, if any",
+        description="Corpus (CAPES area) that sourced this analysis, if any",
     )
     report_reference: Optional[str] = Field(
         None,
@@ -370,9 +376,9 @@ class ReportAnalysisItem(BaseModel):
         None,
         description="Program identifiers marked as important by the user",
     )
-    informativo_id: Optional[int] = Field(
+    corpus_id: Optional[int] = Field(
         None,
-        description="Informativo that sourced this analysis, if any",
+        description="Corpus that sourced this analysis, if any",
     )
     assessment_path: Optional[str] = Field(
         None,
@@ -448,10 +454,10 @@ class ReportIngestResponse(BaseModel):
     area: Optional[str] = Field(
         None, description="CAPES area name extracted from the report info"
     )
-    informativo_key: Optional[str] = Field(
+    corpus_key: Optional[str] = Field(
         None,
         description=(
-            "Textual key of the informativo resolved from the report area; "
+            "Textual key of the corpus resolved from the report area; "
             "null when the area could not be matched"
         ),
     )

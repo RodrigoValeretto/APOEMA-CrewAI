@@ -220,7 +220,7 @@ python main.py --help
 | status | VARCHAR(50) | Status (pending, processing, completed, failed) |
 | model | VARCHAR(50) | Modelo usado (V5) |
 | important_programs | TEXT[] | Siglas destacadas (V6) |
-| informativo_id | INTEGER | Proveniência do informativo (V7) |
+| corpus_id | INTEGER | Proveniência do corpus (V7, renomeada de `informativo_id` na V11) |
 | report_reference | VARCHAR(255) | Agrupa análises num relatório (V8, indexada) |
 | created_at | TIMESTAMP | Data de criação |
 | updated_at | TIMESTAMP | Data de última atualização |

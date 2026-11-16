@@ -567,7 +567,7 @@ curl -X POST http://localhost:8000/api/reports/ingest \
   -d "{\"report_id\": \"b4c319228b363dc55611ca3e78cb1f8a\"}"
 
 # → {report_id, report_reference, area: "Zootecnia - Recursos Pesqueiros",
-#    informativo_key: "zootecnia", total_charts: 57, created: N, skipped: M,
+#    corpus_key: "zootecnia", total_charts: 57, created: N, skipped: M,
 #    failed: 0, charts: [{chart_id, png_url, analysis_id, status}, ...]}
 
 # Pré-requisito: a ficha da área já ingerida (POST /api/fichas/ingest) e convertida.
@@ -637,18 +637,18 @@ curl http://localhost:8000/api/informativos/2/documentos
 curl http://localhost:8000/api/informativos/2/documentos/5/conteudo -o ficha.json
 ```
 
-### 4. Análise disparada pelo informativo (ficha = assessment; anexos = Knowledge)
+### 4. Análise disparada pelo corpus (ficha = assessment; anexos = Knowledge)
 ```bash
 curl -X POST http://localhost:8000/api/analysis \
   -H "Content-Type: application/json" \
-  -d '{"informativo_id": 2, "model": "gemini"}'
-# → {id, type: "basic", status: "pending", informativo_id: 2}
+  -d '{"corpus_id": 2, "model": "gemini"}'
+# → {id, type: "basic", status: "pending", corpus_id: 2}
 ```
 
 ### Erros esperados (validados)
 - `kind` inválido ou extensão errada (ex.: .txt/.xlsx como `ficha`) → **400**
 - informativo inexistente / documento de outro informativo → **404**
-- `informativo_id` combinado com assessment explícito → **400**
+- `corpus_id` combinado com assessment explícito → **400**
 - análise em informativo sem ficha convertida → **400**
 - `/conteudo` de documento não convertido → **409**
 
@@ -663,17 +663,17 @@ curl http://localhost:8000/api/fichas
 # → {total: 50, items: [{codigo: "COMPUTACAO", nome: "Computação",
 #                        chave: "computacao", informativo_id: 3, ...}]}
 
-# Dispara análise pela chave textual (resolve a informativo_id por slug)
+# Dispara análise pela chave textual (resolve a corpus_id por slug)
 curl -X POST http://localhost:8000/api/analysis \
   -H "Content-Type: application/json" \
-  -d '{"informativo_key": "computacao", "model": "gemini"}'
+  -d '{"corpus_key": "computacao", "model": "gemini"}'
 ```
 
 ### Erros esperados (feature ficha ingestion)
 - `POST /api/fichas/ingest` sem `DRIVE_FOLDER_ID` configurado → **400**
-- `informativo_key` desconhecida → **400** (mensagem aponta para `GET /api/fichas`)
-- `informativo_key` + `informativo_id` juntos → **400** (mutuamente exclusivos)
-- `informativo_key` + assessment explícito → **400**
+- `corpus_key` desconhecida → **400** (mensagem aponta para `GET /api/fichas`)
+- `corpus_key` + `corpus_id` juntos → **400** (mutuamente exclusivos)
+- `corpus_key` + assessment explícito → **400**
 
 ---
 
@@ -686,6 +686,6 @@ curl -X POST http://localhost:8000/api/analysis \
 
 ---
 
-**Última atualização:** Novembro 2026 (fixes: `DRIVE_*` wired no docker-compose, `informativo_key` normalizado antes da validação, converter worker `--threads 1` p/ evitar OOM; **report ingest**: `POST /api/reports/ingest` consome um relatório APOEMA pelo id e enfileira uma análise por gráfico; **batch**: `POST /api/reports/ingest-batch` enfileira uma lista de relatórios para ingestão um por vez)
+**Última atualização:** Novembro 2026 (fixes: `DRIVE_*` wired no docker-compose, `corpus_key` normalizado antes da validação, converter worker `--threads 1` p/ evitar OOM; **report ingest**: `POST /api/reports/ingest` consome um relatório APOEMA pelo id e enfileira uma análise por gráfico; **batch**: `POST /api/reports/ingest-batch` enfileira uma lista de relatórios para ingestão um por vez; **result_json**: resultados de task que são objeto JSON passam a ser armazenados parseados em `result_json` com `result` = null; **corpus**: `informativo_id`/`informativo_key` renomeados para `corpus_id`/`corpus_key` na API e na coluna `analysis.corpus_id` (V11))
 **Versão:** 2.3.0
 **Status:** Pronto para testes ✅

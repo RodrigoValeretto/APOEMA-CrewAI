@@ -77,17 +77,17 @@ def ingest_report(
     info = report_ingestion.fetch_report_info(report_id)
     area = report_ingestion.report_area_name(info)
 
-    # 2. Resolve the area to an informativo (assessment source).
-    informativo_id = None
-    informativo_key = None
+    # 2. Resolve the area to a corpus (assessment source).
+    corpus_id = None
+    corpus_key = None
     if area:
         code = area_code_from_name(area)
         if code:
-            informativo_key = ficha_key(code)
-            informativo = database.get_informativo_by_slug(informativo_key)
+            corpus_key = ficha_key(code)
+            informativo = database.get_informativo_by_slug(corpus_key)
             if informativo:
-                informativo_id = informativo["id"]
-    if not informativo_id:
+                corpus_id = informativo["id"]
+    if not corpus_id:
         raise InvalidAnalysisInput(
             f"Report area {area!r} could not be resolved to an ingested "
             "informativo. Ingest the corresponding ficha first "
@@ -95,7 +95,7 @@ def ingest_report(
         )
 
     assessment_file, converted_ficha_id, knowledge_files, informativo_mappings = (
-        _resolve_informativo_inputs(informativo_id)
+        _resolve_informativo_inputs(corpus_id)
     )
 
     # 3. List charts.
@@ -157,7 +157,7 @@ def ingest_report(
                 status=AnalysisStatus.PENDING.value,
                 model=model,
                 important_programs=important_programs,
-                informativo_id=informativo_id,
+                corpus_id=corpus_id,
                 report_reference=report_id,
             )
 
@@ -213,7 +213,7 @@ def ingest_report(
         report_id=report_id,
         report_reference=report_id,
         area=area or None,
-        informativo_key=informativo_key,
+        corpus_key=corpus_key,
         total_charts=len(charts),
         created=created,
         skipped=skipped,

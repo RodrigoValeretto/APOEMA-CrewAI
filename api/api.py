@@ -378,18 +378,18 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         InvalidAnalysisInput: If input is invalid
     """
     try:
-        # Resolve informativo_key -> informativo_id (textual key = informativo slug).
-        if request.informativo_key:
-            informativo = database.get_informativo_by_slug(request.informativo_key)
+        # Resolve corpus_key -> corpus_id (textual key = corpus slug).
+        if request.corpus_key:
+            informativo = database.get_informativo_by_slug(request.corpus_key)
             if informativo is None:
                 raise InvalidAnalysisInput(
-                    f"Unknown ficha key '{request.informativo_key}'. "
+                    f"Unknown ficha key '{request.corpus_key}'. "
                     "See GET /api/fichas for the available keys."
                 )
-            request.informativo_id = informativo["id"]
+            request.corpus_id = informativo["id"]
             # Normalize: the textual key is resolved to its id; leaving both set
             # would trip the "mutually exclusive" check in validate_analysis_request.
-            request.informativo_key = None
+            request.corpus_key = None
 
         # Validate input (including URLs)
         is_valid, error_msg = validate_analysis_request(
@@ -406,8 +406,8 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             csv_file_id=request.csv_file_id,
             csv_url=request.csv_url,
             model=request.model,
-            informativo_id=request.informativo_id,
-            informativo_key=request.informativo_key,
+            corpus_id=request.corpus_id,
+            corpus_key=request.corpus_key,
         )
         if not is_valid:
             raise InvalidAnalysisInput(error_msg)
@@ -415,19 +415,19 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         # Validate model
         validate_model_choice(request.model)
 
-        # Resolve informativo (if provided): converted ficha = assessment,
+        # Resolve corpus (if provided): converted ficha = assessment,
         # converted anexos/adendos = extra Knowledge files.
         knowledge_files = []
         informativo_mappings = []
         converted_ficha_id = None
-        if request.informativo_id:
+        if request.corpus_id:
             assessment_file, converted_ficha_id, knowledge_files, informativo_mappings = (
-                _resolve_informativo_inputs(request.informativo_id)
+                _resolve_informativo_inputs(request.corpus_id)
             )
 
         # Resolve file sources (download from URLs, resolve IDs to paths)
         resolved_files = await resolve_file_sources(request)
-        if not request.informativo_id:
+        if not request.corpus_id:
             assessment_file = resolved_files['assessment_file']
         pdf_path = resolved_files['pdf_path']
         png_path = resolved_files['png_path']
@@ -447,16 +447,16 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             status=AnalysisStatus.PENDING.value,
             model=request.model,
             important_programs=request.important_programs,
-            informativo_id=request.informativo_id,
+            corpus_id=request.corpus_id,
             report_reference=request.report_reference,
         )
 
         # Collect all file IDs for mapping (both downloaded and passed as reference)
         all_file_mappings = list(downloaded_file_ids)  # Downloaded files
 
-        # Informativo-sourced files: the converted ficha (assessment) and every
+        # Corpus-sourced files: the converted ficha (assessment) and every
         # converted anexo/adendo (knowledge extras) mapped for retry support.
-        if request.informativo_id and converted_ficha_id:
+        if request.corpus_id and converted_ficha_id:
             all_file_mappings.append((converted_ficha_id, FileType.ASSESSMENT.value))
             all_file_mappings.extend(informativo_mappings)
 
@@ -500,7 +500,7 @@ async def create_analysis_endpoint(request: AnalysisRequest):
             status=AnalysisStatus.PENDING.value,
             created_at=datetime.now(),
             important_programs=request.important_programs,
-            informativo_id=request.informativo_id,
+            corpus_id=request.corpus_id,
             report_reference=request.report_reference,
         )
 
@@ -594,7 +594,7 @@ async def retry_analysis_endpoint(analysis_id: int):
             status=AnalysisStatus.PROCESSING.value,
             created_at=analysis["created_at"],
             important_programs=important_programs,
-            informativo_id=analysis.get("informativo_id"),
+            corpus_id=analysis.get("corpus_id"),
             report_reference=analysis.get("report_reference"),
         )
 
@@ -688,6 +688,7 @@ async def get_analysis_endpoint(analysis_id: int):
                 id=r["id"],
                 task_name=r["task_name"],
                 result=r["result"],
+                result_json=r["result_json"],
                 created_at=r["created_at"],
             )
             for r in results
@@ -711,7 +712,7 @@ async def get_analysis_endpoint(analysis_id: int):
             created_at=analysis["created_at"],
             updated_at=analysis["updated_at"],
             important_programs=analysis.get("important_programs") or None,
-            informativo_id=analysis.get("informativo_id"),
+            corpus_id=analysis.get("corpus_id"),
             report_reference=analysis.get("report_reference"),
             results=task_results,
             progress=progress,
@@ -820,6 +821,7 @@ async def get_report_endpoint(report_reference: str):
                     id=r["id"],
                     task_name=r["task_name"],
                     result=r["result"],
+                    result_json=r["result_json"],
                     created_at=r["created_at"],
                 )
                 for r in results
@@ -832,7 +834,7 @@ async def get_report_endpoint(report_reference: str):
                     status=a["status"],
                     created_at=a["created_at"],
                     important_programs=a.get("important_programs") or None,
-                    informativo_id=a.get("informativo_id"),
+                    corpus_id=a.get("corpus_id"),
                     assessment_path=paths.get(FileType.ASSESSMENT.value),
                     pdf_path=paths.get(FileType.PDF.value),
                     png_path=paths.get(FileType.PNG.value),
@@ -1014,6 +1016,7 @@ async def get_analysis_results_endpoint(
                 id=r["id"],
                 task_name=r["task_name"],
                 result=r["result"],
+                result_json=r["result_json"],
                 created_at=r["created_at"],
             )
             for r in results
