@@ -252,7 +252,7 @@ Cliente faz polling:
     created, skipped, failed, charts[]}`
   - Consome um relatório APOEMA publicado a partir do seu id (o md5 na URL
     `https://sistemas.prpg.usp.br/apoema-pg/view/<id>`): lê `info-report` para
-    derivar a área CAPES e a resolve num informativo (cuja ficha convertida vira o
+    derivar a área CAPES e a resolve num corpus (cuja ficha convertida vira o
     assessment), lê `charts` para listar os gráficos e, para cada gráfico com
     arquivo, baixa o PNG e obtém o CSV (`chartcsv`) e cria/enfileira uma análise
     `png_csv` — todas agrupadas sob `report_reference` = id do relatório.
@@ -296,37 +296,37 @@ Cliente faz polling:
   - Response: `{message, id}`
   - Deleta arquivo do disco e registro do BD
 
-### Informativos (conversão de documentos PDF/XLSX → JSON)
-- **POST /api/informativos** — body `{nome, quadrienio?}` → cria corpus da área
+### Corpora (conversão de documentos PDF/XLSX → JSON)
+- **POST /api/corpora** — body `{nome, quadrennium?}` → cria corpus da área
   (slug gerado via NFKD, ex. "ciência da computação" → `ciencia_da_computacao`)
-- **GET /api/informativos** / **GET /api/informativos/{id}** — lista com contagem
+- **GET /api/corpora** / **GET /api/corpora/{id}** — lista com contagem
   de documentos (total/completed)
-- **POST /api/informativos/{id}/documentos** — multipart `file` + form `kind`
-  (`ficha`→.pdf; `anexo|adendo`→.pdf/.xlsx); salva o upload, registra documento
+- **POST /api/corpora/{id}/documents** — multipart `file` + form `kind`
+  (`form`→.pdf; `anexo|adendo`→.pdf/.xlsx); salva o upload, registra documento
   (status `pending`) e enfileira a conversão na fila `conversion`
   (Dramatiq, `converter_worker`) → Response (201) com status do documento
-- **GET /api/informativos/{id}/documentos** — lista documentos + estado da
+- **GET /api/corpora/{id}/documents** — lista documentos + estado da
   conversão (`pending|processing|completed|failed`, com `error`)
-- **GET /api/informativos/{id}/documentos/{document_id}** — um documento
-- **GET /api/informativos/{id}/documentos/{document_id}/conteudo** — baixa o JSON
-  convertido (404 se o documento não pertence ao informativo; 409 se não convertido)
+- **GET /api/corpora/{id}/documents/{document_id}** — um documento
+- **GET /api/corpora/{id}/documents/{document_id}/content** — baixa o JSON
+  convertido (404 se o documento não pertence ao corpus; 409 se não convertido)
 - Conversão concluída grava `uploads/converted/doc_{id}.json` e registra em
   `analysis_files` com `file_type='assessment'` (ficha) ou `'anexo'` (anexo/adendo)
 
 ### Fichas (ingestão do Google Drive + de-para)
-- **POST /api/fichas/ingest** — re-roda a ingestão da pasta pública do Drive
+- **POST /api/areas/ingest** — re-roda a ingestão da pasta pública do Drive
   (`DRIVE_FOLDER_ID`), de forma **idempotente**: enumera, baixa só os PDFs novos
-  (`*_FICHA_*` e `*_ANEXO_FICHA_*`), cria/obtém o informativo por slug e enfileira a
+  (`*_FICHA_*` e `*_ANEXO_FICHA_*`), cria/obtém o corpus por slug e enfileira a
   conversão; documentos já ingeridos (por `drive_file_id`, V9) são ignorados ou
   re-enfileirados se estiverem `pending`/`failed`. Response:
   `{total, downloaded, new_documents, reenqueued, skipped, errors}`. A ingestão também
   roda automaticamente na subida do app (hook no `lifespan`, gated por
   `DRIVE_AUTO_INGEST=true`).
-- **GET /api/fichas** — de-para de todas as áreas: cruza o catálogo estático
-  (`api/fichas_catalog.py`: código de filename → nome oficial CAPES → chave) com o
+- **GET /api/areas** — de-para de todas as áreas: cruza o catálogo estático
+  (`api/areas_catalog.py`: código de filename → nome oficial CAPES → chave) com o
   estado do banco. Cada item:
-  `{codigo, nome, chave, informativo_id, documento_id, converted_file_id, status,
-  quadrienio, drive_file_id}`. Áreas ainda não ingeridas vêm com ids/status `null`
+  `{codigo, nome, chave, corpus_id, document_id, converted_file_id, status,
+  quadrennium, drive_file_id}`. Áreas ainda não ingeridas vêm com ids/status `null`
   (funciona como painel do que falta ingerir).
 
 ---
@@ -378,24 +378,24 @@ CREATE TABLE analysis_files (
 > **Nota:** o schema acima reflete a fase V2. Migrations posteriores: **V3**
 > (vínculo analysis↔files movido para `analysis_file_mapping`; `analysis_files`
 > deixou de ter `analysis_id`), **V4** (dedup por URL), **V5** (`analysis.model`),
-> **V6** (`analysis.important_programs` TEXT[]), **V7** (informativos),
+> **V6** (`analysis.important_programs` TEXT[]), **V7** (corpora),
 > **V8** (`analysis.report_reference` VARCHAR(255) indexado — agrupa análises
 > num relatório, feature report-reference) e **V9**
-> (`informativo_documents.drive_file_id` VARCHAR(255) com índice UNIQUE parcial —
+> (`corpus_documents.drive_file_id` VARCHAR(255) com índice UNIQUE parcial —
 > identidade externa do documento no Drive, base da ingestão idempotente).
 
-### Tabelas V7: informativos + informativo_documents (conversão de documentos)
+### Tabelas V7: corpora + corpus_documents (conversão de documentos)
 ```sql
-CREATE TABLE informativos (
+CREATE TABLE corpora (
     id SERIAL PRIMARY KEY,
     nome VARCHAR(255) NOT NULL,
     slug VARCHAR(255) NOT NULL UNIQUE,      -- ex.: ciencia_da_computacao
-    quadrienio VARCHAR(32),                 -- ex.: 2025-2028
+    quadrennium VARCHAR(32),                 -- ex.: 2025-2028
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE informativo_documents (
+CREATE TABLE corpus_documents (
     id SERIAL PRIMARY KEY,
-    informativo_id INTEGER NOT NULL REFERENCES informativos(id) ON DELETE CASCADE,
+    corpus_id INTEGER NOT NULL REFERENCES corpora(id) ON DELETE CASCADE,
     kind VARCHAR(32) NOT NULL,              -- ficha | anexo | adendo
     status VARCHAR(32) NOT NULL DEFAULT 'pending', -- pending|processing|completed|failed
     original_file_id INTEGER REFERENCES analysis_files(id),
@@ -405,8 +405,8 @@ CREATE TABLE informativo_documents (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
--- V7 também adiciona: ALTER TABLE analysis ADD COLUMN corpus_id INTEGER REFERENCES informativos(id);
---   (originalmente informativo_id; renomeada para corpus_id na V11)
+-- V7 também adiciona: ALTER TABLE analysis ADD COLUMN corpus_id INTEGER REFERENCES corpora(id);
+--   (originalmente corpus_id; renomeada para corpus_id na V11)
 ```
 
 ---
@@ -595,19 +595,19 @@ T=35.5s: Client GET /api/analysis/42
 ## ✨ Recursos Implementados
 
 ✅ **Core API**
-- [x] 25 endpoints HTTP RESTful (análises + arquivos + informativos + relatórios + zombie cleanup)
+- [x] 25 endpoints HTTP RESTful (análises + arquivos + corpora + relatórios + zombie cleanup)
 - [x] Validação de entrada robusta
 - [x] Error handling estruturado
 - [x] CORS middleware
 - [x] Request logging
 - [x] Pydantic models para type safety
 
-✅ **Conversão de Documentos (Informativo — branch json-converter)**
-- [x] Upload de ficha (PDF) e anexos/adendos (PDF/XLSX) por informativo
+✅ **Conversão de Documentos (Corpus — branch json-converter)**
+- [x] Upload de ficha (PDF) e anexos/adendos (PDF/XLSX) por corpus
 - [x] Conversão assíncrona (Dramatiq, fila `conversion`, `converter_worker` + docling)
 - [x] JSON enriquecido (`conversion/serialize.py`, schema `apoema-json-converter-v1`)
-- [x] Análise por `informativo_id`: ficha convertida = assessment; anexos = Knowledge
-- [x] Retry de análise reconstrói anexos (file_type `anexo` agrupado em lista)
+- [x] Análise por `corpus_id`: ficha convertida = assessment; anexos = Knowledge
+- [x] Retry de análise reconstrói anexos (file_type `attachment` agrupado em lista)
 
 ✅ **Report reference (agregação de análises por relatório — V8)**
 - [x] `report_reference` opcional no `POST /api/analysis` agrupa análises num relatório
