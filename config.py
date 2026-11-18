@@ -84,9 +84,9 @@ class Config:
         "OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://localhost:11434")
     )
     # Ollama chat model used by the "ollama" profile (must support tool calling).
-    # qwen2.5:7b (4.7GB) fits the RTX 4060 8GB and is strong at structured
-    # output. On CPU-only machines, use qwen2.5:3b (1.9GB) instead.
-    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+    # qwen2.5:3b (1.9GB) is the CPU-safe default; on GPU machines set
+    # OLLAMA_MODEL=qwen2.5:7b (4.7GB) in .env (fits an RTX 4060 8GB).
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
     # Vision model used by the plot analyst (task 7 reads a PNG chart).
     OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "qwen2.5vl:3b")
     DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "ollama")

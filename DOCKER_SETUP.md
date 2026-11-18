@@ -59,8 +59,9 @@ um OOM (`Worker ... exited (code -9)`) matou o worker convertendo 8 fichas em pa
 > docker compose up -d --build
 > # ou: make docker-up
 > ```
-> O default de `OLLAMA_MODEL` no compose é `qwen2.5:7b` (4.7GB — cabe numa
-> RTX 4060 8GB). Em CPU-only, troque por `qwen2.5:3b` (1.9GB) via `.env`.
+> O default de `OLLAMA_MODEL` no compose é `qwen2.5:3b` (1.9GB — seguro para
+> CPU-only). Em máquina com GPU, troque por `qwen2.5:7b` (4.7GB — cabe numa
+> RTX 4060 8GB) via `.env`.
 
 O `dramatiq_worker` monta ainda o volume **`chroma_data`** em
 `/root/.local/share/app`, onde o ChromaDB guarda o **índice de Knowledge**
@@ -332,7 +333,7 @@ Veja `.env.example` para lista completa de variáveis configuráveis:
 - Database: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
 - RabbitMQ: `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`
 - LLM APIs: `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`
-- Ollama: `OLLAMA_MODEL` (default `qwen2.5:7b`), `OLLAMA_VISION_MODEL`, `OLLAMA_CONTEXT_LENGTH`, `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_MAX_TOKENS` (cap de geração, default 2048), `OLLAMA_TIMEOUT`, `OLLAMA_VISION_MAX_TOKENS`, `OLLAMA_EMBED_TIMEOUT`, `RAG_EMBEDDING_MODEL`
+- Ollama: `OLLAMA_MODEL` (default `qwen2.5:3b`; use `qwen2.5:7b` em GPU), `OLLAMA_VISION_MODEL`, `OLLAMA_CONTEXT_LENGTH`, `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_MAX_TOKENS` (cap de geração, default 2048), `OLLAMA_TIMEOUT`, `OLLAMA_VISION_MAX_TOKENS`, `OLLAMA_EMBED_TIMEOUT`, `RAG_EMBEDDING_MODEL`
 - Zombie watchdog: `ZOMBIE_WATCHDOG_INTERVAL` (default 1800 s, `0` desativa), `ZOMBIE_WATCHDOG_THRESHOLD` (default 1800 s)
 - Drive ficha ingestion: `DRIVE_FOLDER_ID` (id da pasta pública de fichas), `DRIVE_AUTO_INGEST` (default `true` — ingere a pasta a cada subida do app)
 - Report ingestion: `APOEMA_CHART_PNG_TIMEOUT` (default 30 — timeout do download dos PNGs de gráfico; a rota `/chart/...` fica atrás da VPN da USP)
