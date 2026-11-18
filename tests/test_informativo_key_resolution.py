@@ -13,21 +13,21 @@ def _patch_create_flow(monkeypatch):
     """Mock the DB + enqueue so a POST /api/analysis with a valid key succeeds."""
     monkeypatch.setattr(
         api_module.database,
-        "get_informativo_by_slug",
-        lambda slug: {"id": 27, "nome": "Computação", "slug": slug, "quadrienio": "2025-2028"},
+        "get_corpus_by_slug",
+        lambda slug: {"id": 27, "name": "Computação", "slug": slug, "quadrennium": "2025-2028"},
     )
     monkeypatch.setattr(
         api_module.database,
-        "get_informativo",
-        lambda informativo_id: {"id": informativo_id, "nome": "Computação"},
+        "get_corpus",
+        lambda corpus_id: {"id": corpus_id, "name": "Computação"},
     )
     monkeypatch.setattr(
         api_module.database,
         "get_completed_documents_by_kinds",
-        lambda informativo_id, kinds: (
+        lambda corpus_id, kinds: (
             [{"converted_file_path": "/app/uploads/converted/ficha.json",
               "converted_file_id": 100}]
-            if kinds == ["ficha"]
+            if kinds == ["form"]
             else []
         ),
     )
@@ -61,7 +61,7 @@ def test_corpus_key_resolves_and_creates(monkeypatch):
 def test_corpus_key_unknown_still_400(monkeypatch):
     """An unknown key keeps failing with INVALID_INPUT (no regression)."""
     monkeypatch.setattr(
-        api_module.database, "get_informativo_by_slug", lambda slug: None
+        api_module.database, "get_corpus_by_slug", lambda slug: None
     )
     client = TestClient(api_module.app)
 
@@ -72,4 +72,4 @@ def test_corpus_key_unknown_still_400(monkeypatch):
 
     assert resp.status_code == 400
     assert resp.json()["error"] == "INVALID_INPUT"
-    assert "Unknown ficha key" in resp.json()["message"]
+    assert "Unknown area key" in resp.json()["message"]

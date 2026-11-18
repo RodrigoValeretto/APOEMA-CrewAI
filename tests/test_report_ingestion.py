@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api import report_ingestion as ri
-from api.fichas_catalog import area_code_from_name, ficha_key
+from api.areas_catalog import area_code_from_name, area_key
 
 
 class TestReportIdValidation:
@@ -74,7 +74,7 @@ class TestAreaReverseLookup:
     def test_hyphen_variant_resolves(self):
         assert area_code_from_name("Zootecnia - Recursos Pesqueiros") == "ZOOTECNIA"
         assert area_code_from_name("Zootecnia / Recursos Pesqueiros") == "ZOOTECNIA"
-        assert ficha_key("ZOOTECNIA") == "zootecnia"
+        assert area_key("ZOOTECNIA") == "zootecnia"
 
     def test_unknown_name_returns_none(self):
         assert area_code_from_name("Área Inexistente") is None
@@ -113,14 +113,14 @@ class TestReportService:
         )
         monkeypatch.setattr(
             svc.database,
-            "get_informativo_by_slug",
-            lambda slug: {"id": 7, "nome": "Zootecnia", "slug": slug},
+            "get_corpus_by_slug",
+            lambda slug: {"id": 7, "name": "Zootecnia", "slug": slug},
         )
         monkeypatch.setattr(svc.database, "get_report_png_urls", lambda ref: set())
         monkeypatch.setattr(
             svc,
-            "_resolve_informativo_inputs",
-            lambda informativo_id: ("/app/uploads/ficha.json", 10, [], []),
+            "_resolve_corpus_inputs",
+            lambda corpus_id: ("/app/uploads/ficha.json", 10, [], []),
         )
         monkeypatch.setattr(
             svc.file_manager,
@@ -158,7 +158,7 @@ class TestReportService:
         assert captured["png_file"] == "/app/uploads/chart.png"
         assert captured["assessment_file"] == "/app/uploads/ficha.json"
 
-    def test_ingest_requires_resolvable_informativo(self, monkeypatch):
+    def test_ingest_requires_resolvable_corpus(self, monkeypatch):
         from api import report_service as svc
         from api.exceptions import InvalidAnalysisInput
 
@@ -198,14 +198,14 @@ class TestReportService:
         )
         monkeypatch.setattr(
             svc.database,
-            "get_informativo_by_slug",
-            lambda slug: {"id": 7, "nome": "Zootecnia", "slug": slug},
+            "get_corpus_by_slug",
+            lambda slug: {"id": 7, "name": "Zootecnia", "slug": slug},
         )
         monkeypatch.setattr(svc.database, "get_report_png_urls", lambda ref: set())
         monkeypatch.setattr(
             svc,
-            "_resolve_informativo_inputs",
-            lambda informativo_id: ("/app/uploads/ficha.json", 10, [], []),
+            "_resolve_corpus_inputs",
+            lambda corpus_id: ("/app/uploads/ficha.json", 10, [], []),
         )
 
         def _failing_download(url, file_type, timeout=30):

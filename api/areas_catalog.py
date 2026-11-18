@@ -1,9 +1,9 @@
-"""Static de-para catalog: CAPES ficha filename code -> official area name.
+"""Static de-para catalog: CAPES area filename code -> official area name.
 
-Auditable mapping used by the Drive ingestion to populate ``informativos.nome``
-and by the de-para endpoint. The filename prefix (e.g. ``COMPUTACAO``, ``CB_I``)
-is the code; ``ficha_key`` (its slug) is the textual key accepted in requests
-(``informativo_key``) and stored as ``informativos.slug``.
+Auditable mapping used by the Drive ingestion to populate ``corpora.name``
+and by the areas endpoint. The filename prefix (e.g. ``COMPUTACAO``, ``CB_I``)
+is the code; ``area_key`` (its slug) is the textual key accepted in requests
+(``corpus_key``) and stored as ``corpora.slug``.
 
 Source: CAPES "Tabela de Áreas de Avaliação" (gov.br), quadriênio 2025-2028.
 """
@@ -14,7 +14,7 @@ from typing import Optional
 from api.validators import slugify
 
 # code (filename prefix, uppercase) -> official CAPES area name
-FICHA_AREAS = {
+CAPES_AREAS = {
     "ADM": "Administração Pública e de Empresas, Ciências Contábeis e Turismo",
     "ANTROPOLOGIA_ARQUEOLOGIA": "Antropologia / Arqueologia",
     "ARTES": "Artes",
@@ -67,19 +67,19 @@ FICHA_AREAS = {
     "ZOOTECNIA": "Zootecnia / Recursos Pesqueiros",
 }
 
-_FICHA_MARKER = "_FICHA_"
-_ANEXO_MARKER = "_ANEXO_FICHA_"
-_QUADRIENIO_RE = re.compile(r"20\d{2}_20\d{2}")
+_FORM_MARKER = "_FICHA_"
+_ATTACHMENT_MARKER = "_ANEXO_FICHA_"
+_QUADRENNIUM_RE = re.compile(r"20\d{2}_20\d{2}")
 
 
-def ficha_key(code: str) -> str:
+def area_key(code: str) -> str:
     """Textual key for an area code (slugified filename prefix)."""
     return slugify(code)
 
 
 def area_name(code: str) -> Optional[str]:
     """Official CAPES area name for a filename code, or None if unknown."""
-    return FICHA_AREAS.get(code)
+    return CAPES_AREAS.get(code)
 
 
 def area_code_from_name(name: str) -> Optional[str]:
@@ -91,33 +91,34 @@ def area_code_from_name(name: str) -> Optional[str]:
     Pesqueiros"`` — both slugify to ``zootecnia_recursos_pesqueiros``).
     """
     target = slugify(name)
-    for code, official in FICHA_AREAS.items():
+    for code, official in CAPES_AREAS.items():
         if slugify(official) == target:
             return code
     return None
 
 
-def parse_ficha_filename(name: str):
+def parse_area_filename(name: str):
     """Parse a drive filename into (area_code, kind) or None if unrecognized.
 
-    ``kind`` is ``"ficha"`` (``*_FICHA_*``) or ``"anexo"`` (``*_ANEXO_FICHA_*``).
-    Anexos belong to the parent area (``BIOTEC_ANEXO_FICHA_*`` -> ``BIOTEC``).
+    ``kind`` is ``"form"`` (``*_FICHA_*``) or ``"attachment"``
+    (``*_ANEXO_FICHA_*``). Attachments belong to the parent area
+    (``BIOTEC_ANEXO_FICHA_*`` -> ``BIOTEC``).
     """
     if not name or not name.lower().endswith(".pdf"):
         return None
     stem = name[:-4]  # strip ".pdf"
-    if _ANEXO_MARKER in stem:
-        area_code = stem.split(_ANEXO_MARKER, 1)[0]
-        kind = "anexo"
-    elif _FICHA_MARKER in stem:
-        area_code = stem.split(_FICHA_MARKER, 1)[0]
-        kind = "ficha"
+    if _ATTACHMENT_MARKER in stem:
+        area_code = stem.split(_ATTACHMENT_MARKER, 1)[0]
+        kind = "attachment"
+    elif _FORM_MARKER in stem:
+        area_code = stem.split(_FORM_MARKER, 1)[0]
+        kind = "form"
     else:
         return None
     return area_code, kind
 
 
-def parse_quadrienio(name: str):
+def parse_quadrennium(name: str):
     """Extract the quadriênio label from a filename (e.g. '2025-2028')."""
-    m = _QUADRIENIO_RE.search(name)
+    m = _QUADRENNIUM_RE.search(name)
     return m.group(0).replace("_", "-") if m else None

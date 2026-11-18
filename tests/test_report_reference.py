@@ -108,7 +108,7 @@ class TestRetryPreservesReportReference:
             "status": "failed",
             "model": "ollama",
             "important_programs": None,
-            "informativo_id": None,
+            "corpus_id": None,
             "report_reference": "relatorio-retry",
             "created_at": datetime(2026, 10, 14, 12, 0, 0),
         }
