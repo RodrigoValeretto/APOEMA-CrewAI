@@ -84,8 +84,8 @@ class AnalysisRequest(BaseModel):
     corpus_id: Optional[int] = Field(
         None,
         description=(
-            "ID of a corpus (CAPES area). The corpus's converted ficha is used "
-            "as the assessment file and its converted anexos/adendos are "
+            "ID of a corpus (CAPES area). The corpus's converted form is used "
+            "as the assessment file and its converted attachments/addenda are "
             "attached as extra Knowledge sources (retrieval). Alternative to "
             "assessment_file / assessment_file_id / assessment_file_url. "
             "Mutually exclusive with corpus_key."
@@ -95,9 +95,9 @@ class AnalysisRequest(BaseModel):
     corpus_key: Optional[str] = Field(
         None,
         description=(
-            "Textual key of a CAPES ficha area (the corpus slug, e.g. "
+            "Textual key of a CAPES area (the corpus slug, e.g. "
             "'computacao', 'cb_i'). Resolved to corpus_id by slug; the "
-            "converted ficha becomes the assessment file. Alternative to "
+            "converted form becomes the assessment file. Alternative to "
             "corpus_id and to assessment_file / assessment_file_id / "
             "assessment_file_url."
         ),
@@ -644,18 +644,18 @@ class ResultsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Informativos (CAPES area corpus) + document conversion
+# Corpora (CAPES area corpus) + document conversion
 # ---------------------------------------------------------------------------
-class InformativoCreate(BaseModel):
-    """Request model for creating an informativo"""
+class CorpusCreate(BaseModel):
+    """Request model for creating a corpus"""
 
-    nome: str = Field(
+    name: str = Field(
         ...,
         min_length=3,
         description="Human name of the CAPES area (e.g. 'Ciência da Computação')",
         examples=["Ciência da Computação"],
     )
-    quadrienio: Optional[str] = Field(
+    quadrennium: Optional[str] = Field(
         None,
         description="CAPES quadrennium label",
         examples=["2025-2028"],
@@ -664,20 +664,20 @@ class InformativoCreate(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "nome": "Ciência da Computação",
-                "quadrienio": "2025-2028",
+                "name": "Ciência da Computação",
+                "quadrennium": "2025-2028",
             }
         }
     }
 
 
-class InformativoResponse(BaseModel):
-    """Response model for an informativo"""
+class CorpusResponse(BaseModel):
+    """Response model for a corpus"""
 
     id: int
-    nome: str
+    name: str
     slug: str
-    quadrienio: Optional[str] = None
+    quadrennium: Optional[str] = None
     created_at: datetime
     total_documents: int = Field(default=0)
     completed_documents: int = Field(default=0)
@@ -686,9 +686,9 @@ class InformativoResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "id": 1,
-                "nome": "Ciência da Computação",
+                "name": "Ciência da Computação",
                 "slug": "ciencia_da_computacao",
-                "quadrienio": "2025-2028",
+                "quadrennium": "2025-2028",
                 "created_at": "2026-09-04T12:00:00Z",
                 "total_documents": 3,
                 "completed_documents": 2,
@@ -697,19 +697,19 @@ class InformativoResponse(BaseModel):
     }
 
 
-class InformativoListResponse(BaseModel):
-    """Response model for informativo listing"""
+class CorpusListResponse(BaseModel):
+    """Response model for corpus listing"""
 
     total: int
-    items: List[InformativoResponse]
+    items: List[CorpusResponse]
 
 
-class InformativoDocumentResponse(BaseModel):
-    """Response model for an informativo document + its conversion state"""
+class CorpusDocumentResponse(BaseModel):
+    """Response model for a corpus document + its conversion state"""
 
     id: int
-    informativo_id: int
-    kind: str  # ficha | anexo | adendo
+    corpus_id: int
+    kind: str  # form | attachment | addendum
     status: str  # pending | processing | completed | failed
     error: Optional[str] = None
     original_file_id: Optional[int] = None
@@ -725,8 +725,8 @@ class InformativoDocumentResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "id": 7,
-                "informativo_id": 1,
-                "kind": "ficha",
+                "corpus_id": 1,
+                "kind": "form",
                 "status": "completed",
                 "original_file_name": "COMPUTACAO_FICHA_2025_2028.pdf",
                 "converted_file_name": "doc_7.json",
@@ -736,45 +736,45 @@ class InformativoDocumentResponse(BaseModel):
     }
 
 
-class InformativoDocumentListResponse(BaseModel):
-    """Response model for the documents of an informativo"""
+class CorpusDocumentListResponse(BaseModel):
+    """Response model for the documents of a corpus"""
 
-    informativo_id: int
-    items: List[InformativoDocumentResponse]
+    corpus_id: int
+    items: List[CorpusDocumentResponse]
 
 
-class FichaDeParaResponse(BaseModel):
-    """De-para row: filename code -> official name -> textual key -> ids/status."""
+class AreaResponse(BaseModel):
+    """Area row: filename code -> official name -> textual key -> ids/status."""
 
-    codigo: str
-    nome: str
-    chave: str
-    informativo_id: Optional[int] = None
-    documento_id: Optional[int] = None
+    code: str
+    name: str
+    key: str
+    corpus_id: Optional[int] = None
+    document_id: Optional[int] = None
     converted_file_id: Optional[int] = None
-    status: Optional[str] = None  # conversion status of the ficha document
-    quadrienio: Optional[str] = None
+    status: Optional[str] = None  # conversion status of the form document
+    quadrennium: Optional[str] = None
     drive_file_id: Optional[str] = None
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "codigo": "COMPUTACAO",
-                "nome": "Computação",
-                "chave": "computacao",
-                "informativo_id": 3,
-                "documento_id": 7,
+                "code": "COMPUTACAO",
+                "name": "Computação",
+                "key": "computacao",
+                "corpus_id": 3,
+                "document_id": 7,
                 "converted_file_id": 12,
                 "status": "completed",
-                "quadrienio": "2025-2028",
+                "quadrennium": "2025-2028",
                 "drive_file_id": "1wKFaYpVM7wg3wcF9EHYi5sLy0tQY_eF_",
             }
         }
     }
 
 
-class FichaDeParaListResponse(BaseModel):
-    """De-para listing: every catalogued CAPES ficha area."""
+class AreaListResponse(BaseModel):
+    """Area listing: every catalogued CAPES area."""
 
     total: int
-    items: List[FichaDeParaResponse]
+    items: List[AreaResponse]

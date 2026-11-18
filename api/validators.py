@@ -23,10 +23,10 @@ import unicodedata
 
 
 def slugify(text: str) -> str:
-    """Slugify an informativo name (NFKD -> ascii lowercase, _ separators)."""
+    """Slugify a corpus name (NFKD -> ascii lowercase, _ separators)."""
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
     text = re.sub(r"[^a-zA-Z0-9]+", "_", text.lower()).strip("_")
-    return text or "informativo"
+    return text or "corpus"
 
 
 def validate_file_path(file_path: str) -> bool:
