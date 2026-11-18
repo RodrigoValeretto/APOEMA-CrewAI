@@ -130,7 +130,7 @@ make run assessment-file=cc_assessment_data.json pdf-file=cc_report.pdf prefix=c
 ## 📖 Next Steps
 
 - Read [README.md](./README.md) for detailed documentation
-- Read [API_IMPLEMENTATION_SUMMARY.md](./API_IMPLEMENTATION_SUMMARY.md) for the full HTTP API (analysis, informativos, report-reference, zombie cleanup)
+- Read [API_IMPLEMENTATION_SUMMARY.md](./API_IMPLEMENTATION_SUMMARY.md) for the full HTTP API (analysis, corpora, report-reference, zombie cleanup)
 - Read [TESTING_API.md](./TESTING_API.md) for end-to-end API test cases
 - View generated reports in `output/` directory
 
@@ -213,31 +213,86 @@ uv sync --upgrade  # Update all packages
 
 Since the `json-converter` branch, fichas (PDF) and anexos/adendos (XLSX) can be
 uploaded through the API, converted to enriched JSON in the background (Dramatiq
-`conversion` queue + docling) and grouped under an **informativo** (area corpus).
-Analyses can then be triggered straight from the informativo:
+`conversion` queue + docling) and grouped under an **corpus** (area corpus).
+Analyses can then be triggered straight from the corpus:
 
 ```bash
-# 1) Create the informativo once
-curl -X POST http://localhost:8000/api/informativos \
+# 1) Create the corpus once
+curl -X POST http://localhost:8000/api/corpora \
   -H "Content-Type: application/json" \
-  -d '{"nome": "Ciência da Computação", "quadrienio": "2025-2028"}'
+  -d '{"name": "Ciência da Computação", "quadrennium": "2025-2028"}'
 
-# 2) Upload the ficha PDF (kind=ficha) and any xlsx anexos (kind=anexo|adendo)
-curl -X POST http://localhost:8000/api/informativos/1/documentos \
-  -F "file=@COMPUTACAO_FICHA_2025_2028.pdf" -F "kind=ficha"
+# 2) Upload the ficha PDF (kind=form) and any xlsx anexos (kind=attachment|adendo)
+curl -X POST http://localhost:8000/api/corpora/1/documents \
+  -F "file=@COMPUTACAO_FICHA_2025_2028.pdf" -F "kind=form"
 
-# 3) Wait until GET /api/informativos/1/documentos shows status "completed"
+# 3) Wait until GET /api/corpora/1/documents shows status "completed"
 #    (poll every ~10s; each PDF takes ~10-90s on the converter worker)
 
-# 4) Run the analysis from the informativo (ficha = assessment, anexos = Knowledge)
+# 4) Run the analysis from the corpus (ficha = assessment, anexos = Knowledge)
 curl -X POST http://localhost:8000/api/analysis \
   -H "Content-Type: application/json" \
-  -d '{"informativo_id": 1, "model": "gemini"}'
+  -d '{"corpus_id": 1, "model": "gemini"}'
 ```
 
 The converted JSON is stored at `uploads/converted/doc_{id}.json` and registered
-in `analysis_files` (file_type `assessment` for fichas, `anexo` otherwise), so it
+in `analysis_files` (file_type `assessment` for fichas, `attachment` otherwise), so it
 can also be reused directly via `assessment_file_id`.
+
+## 📄 Ficha ingestion from Google Drive (automatic)
+
+Instead of uploading each ficha by hand, the system can pull the whole public
+CAPES ficha folder and ingest it through the same corpus+conversion pipeline:
+
+```bash
+# 1) (Automatic) set DRIVE_FOLDER_ID + DRIVE_AUTO_INGEST=true in .env — the API
+#    ingests the folder on every startup (idempotent). To re-run on demand:
+curl -X POST http://localhost:8000/api/areas/ingest
+# -> {"total": 58, "downloaded": 58, "new_documents": 58, "reenqueued": 0, "skipped": 0, "errors": 0}
+
+# 2) List the de-para (filename code -> official name -> textual key -> ids/status)
+curl -s http://localhost:8000/api/areas
+# -> {"total": 50, "items": [{"code": "COMPUTACAO", "name": "Computação",
+#                              "key": "computacao", "corpus_id": 3, ...}]}
+
+# 3) Trigger an analysis by the textual key (resolves to corpus_id by slug)
+curl -X POST http://localhost:8000/api/analysis \
+  -H "Content-Type: application/json" \
+  -d '{"corpus_key": "computacao", "model": "gemini"}'
+```
+
+The textual key is the slugified filename prefix (`CB_I_FICHA_*` → `cb_i`,
+`COMPUTACAO_FICHA_*` → `computacao`); the official CAPES area name lives in the
+static catalog `api/areas_catalog.py`. Ingestion is idempotent via `drive_file_id`.
+
+## 📄 Report ingestion (published APOEMA reports → per-chart analyses)
+
+A published APOEMA report (`https://sistemas.prpg.usp.br/apoema-pg/view/<id>`) can be
+consumed and turned into one `png_csv` analysis per chart, all grouped under
+`report_reference` = report id:
+
+```bash
+# One report: derives the CAPES area (info-report), lists charts, downloads each
+# chart's PNG + CSV, and enqueues one png_csv analysis per chart.
+curl -X POST http://localhost:8000/api/reports/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"report_id": "b4c319228b363dc55611ca3e78cb1f8a", "model": "ollama"}'
+
+# A list of reports: enqueued and consumed one at a time, in order (202 immediate).
+curl -X POST http://localhost:8000/api/reports/ingest-batch \
+  -H "Content-Type: application/json" \
+  -d '{"reports_list": ["b4c319228b363dc55611ca3e78cb1f8a", "<another-id>"], "model": "ollama"}'
+
+# Track progress via the worker log and the aggregation endpoint:
+#   docker logs apoema-dramatiq-worker --since 5m | grep "\[Reports\]"
+curl -s http://localhost:8000/api/reports/b4c319228b363dc55611ca3e78cb1f8a
+```
+
+Both endpoints are idempotent (re-ingesting the same id skips already-analyzed charts).
+The CAPES area is resolved by slug to the ingested ficha (`area_code_from_name`, which
+normalizes `-` vs `/`). The chart PNG route is behind the USP VPN and may not answer
+outside it — the download has a configurable timeout (`APOEMA_CHART_PNG_TIMEOUT`, default
+30s) and a per-chart failure is recorded as `failed` without aborting the report/batch.
 
 ## 💻 Using Commands Without Makefile
 

@@ -81,15 +81,27 @@ class AnalysisRequest(BaseModel):
         ),
         examples=[["UFPA-A-5-CC", "UFBA-A-5-CC"]],
     )
-    informativo_id: Optional[int] = Field(
+    corpus_id: Optional[int] = Field(
         None,
         description=(
-            "ID of an informativo (CAPES area corpus). The informativo's converted "
-            "ficha is used as the assessment file and its converted anexos/adendos "
-            "are attached as extra Knowledge sources (retrieval). Alternative to "
-            "assessment_file / assessment_file_id / assessment_file_url."
+            "ID of a corpus (CAPES area). The corpus's converted form is used "
+            "as the assessment file and its converted attachments/addenda are "
+            "attached as extra Knowledge sources (retrieval). Alternative to "
+            "assessment_file / assessment_file_id / assessment_file_url. "
+            "Mutually exclusive with corpus_key."
         ),
         examples=[1],
+    )
+    corpus_key: Optional[str] = Field(
+        None,
+        description=(
+            "Textual key of a CAPES area (the corpus slug, e.g. "
+            "'computacao', 'cb_i'). Resolved to corpus_id by slug; the "
+            "converted form becomes the assessment file. Alternative to "
+            "corpus_id and to assessment_file / assessment_file_id / "
+            "assessment_file_url."
+        ),
+        examples=["computacao"],
     )
     report_reference: Optional[str] = Field(
         None,
@@ -111,7 +123,7 @@ class AnalysisRequest(BaseModel):
         }
     }
 
-    @validator("assessment_file", "pdf_path", "png_path", "csv_path", "assessment_file_url", "pdf_url", "png_url", "csv_url", "report_reference", pre=True)
+    @validator("assessment_file", "pdf_path", "png_path", "csv_path", "assessment_file_url", "pdf_url", "png_url", "csv_url", "report_reference", "corpus_key", pre=True)
     def empty_str_to_none(cls, v):
         if v == "":
             return None
@@ -176,9 +188,9 @@ class AnalysisResponse(BaseModel):
         None,
         description="Program identifiers marked as important by the user",
     )
-    informativo_id: Optional[int] = Field(
+    corpus_id: Optional[int] = Field(
         None,
-        description="Informativo (CAPES area corpus) that sourced this analysis, if any",
+        description="Corpus (CAPES area) that sourced this analysis, if any",
     )
     report_reference: Optional[str] = Field(
         None,
@@ -202,7 +214,12 @@ class TaskResult(BaseModel):
 
     id: int = Field(..., description="Result ID")
     task_name: str = Field(..., description="Name of the task that produced this result")
-    result: str = Field(..., description="Result content")
+    result: Optional[str] = Field(
+        None, description="Raw result content (null when the result is a JSON object)"
+    )
+    result_json: Optional[dict] = Field(
+        None, description="Parsed JSON object of the result (null for non-JSON results)"
+    )
     created_at: datetime = Field(..., description="Creation timestamp")
 
     model_config = {
@@ -211,6 +228,7 @@ class TaskResult(BaseModel):
                 "id": 101,
                 "task_name": "task_1_data_analysis",
                 "result": "Critérios CAPES extraídos com sucesso...",
+                "result_json": None,
                 "created_at": "2024-06-09T12:05:00Z",
             }
         }
@@ -253,9 +271,9 @@ class AnalysisDetailResponse(BaseModel):
         None,
         description="Program identifiers marked as important by the user",
     )
-    informativo_id: Optional[int] = Field(
+    corpus_id: Optional[int] = Field(
         None,
-        description="Informativo (CAPES area corpus) that sourced this analysis, if any",
+        description="Corpus (CAPES area) that sourced this analysis, if any",
     )
     report_reference: Optional[str] = Field(
         None,
@@ -358,9 +376,9 @@ class ReportAnalysisItem(BaseModel):
         None,
         description="Program identifiers marked as important by the user",
     )
-    informativo_id: Optional[int] = Field(
+    corpus_id: Optional[int] = Field(
         None,
-        description="Informativo that sourced this analysis, if any",
+        description="Corpus that sourced this analysis, if any",
     )
     assessment_path: Optional[str] = Field(
         None,
@@ -387,6 +405,108 @@ class ReportResponse(BaseModel):
     report_reference: str = Field(..., description="The report identifier queried")
     total: int = Field(..., description="Number of analyses in this report")
     analyses: List[ReportAnalysisItem] = Field(default_factory=list)
+
+
+class ReportIngestRequest(BaseModel):
+    """Request to consume a published APOEMA report by its id."""
+
+    report_id: str = Field(
+        ...,
+        description=(
+            "APOEMA report id (the md5 in the report view URL "
+            "https://sistemas.prpg.usp.br/apoema-pg/view/<id>)"
+        ),
+        examples=["b4c319228b363dc55611ca3e78cb1f8a"],
+    )
+    model: str = Field(
+        default=ModelType.OLLAMA.value,
+        description="LLM model to use for the chart analyses",
+        pattern="^(gemini|ollama)$",
+    )
+    important_programs: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Program identifiers (Sigla values) marked as important; passed to "
+            "every chart analysis"
+        ),
+        examples=[["UFBA-A-5-Z"]],
+    )
+
+
+class ReportIngestItem(BaseModel):
+    """One chart of a consumed report and the analysis it spawned."""
+
+    chart_id: str = Field(..., description="Chart identifier (e.g. '00-doc-origem')")
+    png_url: str = Field(..., description="Source URL of the chart PNG")
+    analysis_id: Optional[int] = Field(
+        None, description="Analysis id created for this chart"
+    )
+    status: str = Field(..., description="'created', 'skipped' (no file) or 'failed'")
+
+
+class ReportIngestResponse(BaseModel):
+    """Result of consuming an APOEMA report."""
+
+    report_id: str = Field(..., description="The report id that was consumed")
+    report_reference: str = Field(
+        ..., description="report_reference grouping every spawned analysis"
+    )
+    area: Optional[str] = Field(
+        None, description="CAPES area name extracted from the report info"
+    )
+    corpus_key: Optional[str] = Field(
+        None,
+        description=(
+            "Textual key of the corpus resolved from the report area; "
+            "null when the area could not be matched"
+        ),
+    )
+    total_charts: int = Field(..., description="Charts listed by the report")
+    created: int = Field(..., description="Analyses created")
+    skipped: int = Field(..., description="Charts skipped (no file or already analyzed)")
+    failed: int = Field(..., description="Charts that failed to ingest")
+    charts: List[ReportIngestItem] = Field(default_factory=list)
+
+
+class ReportBatchIngestRequest(BaseModel):
+    """Request to consume a list of APOEMA reports."""
+
+    reports_list: List[str] = Field(
+        ...,
+        description="APOEMA report ids (md5 in .../apoema-pg/view/<id>) to ingest, in order",
+        examples=[["b4c319228b363dc55611ca3e78cb1f8a", "7d8e..."]],
+    )
+    model: str = Field(
+        default=ModelType.OLLAMA.value,
+        description="LLM model to use for the chart analyses",
+        pattern="^(gemini|ollama)$",
+    )
+    important_programs: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Program identifiers (Sigla values) marked as important; passed to "
+            "every chart analysis of every report"
+        ),
+        examples=[["UFBA-A-5-Z"]],
+    )
+
+
+class ReportBatchIngestItem(BaseModel):
+    """Per-report outcome within a batch."""
+
+    report_id: str = Field(..., description="Report id")
+    status: str = Field(..., description="'ok' or 'error'")
+    message: Optional[str] = Field(None, description="Error detail when status='error'")
+    created: int = Field(0, description="Analyses created")
+    skipped: int = Field(0, description="Charts skipped")
+    failed: int = Field(0, description="Charts that failed")
+
+
+class ReportBatchIngestResponse(BaseModel):
+    """Result of enqueuing a list of reports for ingestion."""
+
+    total: int = Field(..., description="Number of reports enqueued")
+    items: List[ReportBatchIngestItem] = Field(default_factory=list)
 
 
 class FileUploadResponse(BaseModel):
@@ -524,18 +644,18 @@ class ResultsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Informativos (CAPES area corpus) + document conversion
+# Corpora (CAPES area corpus) + document conversion
 # ---------------------------------------------------------------------------
-class InformativoCreate(BaseModel):
-    """Request model for creating an informativo"""
+class CorpusCreate(BaseModel):
+    """Request model for creating a corpus"""
 
-    nome: str = Field(
+    name: str = Field(
         ...,
         min_length=3,
         description="Human name of the CAPES area (e.g. 'Ciência da Computação')",
         examples=["Ciência da Computação"],
     )
-    quadrienio: Optional[str] = Field(
+    quadrennium: Optional[str] = Field(
         None,
         description="CAPES quadrennium label",
         examples=["2025-2028"],
@@ -544,20 +664,20 @@ class InformativoCreate(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "nome": "Ciência da Computação",
-                "quadrienio": "2025-2028",
+                "name": "Ciência da Computação",
+                "quadrennium": "2025-2028",
             }
         }
     }
 
 
-class InformativoResponse(BaseModel):
-    """Response model for an informativo"""
+class CorpusResponse(BaseModel):
+    """Response model for a corpus"""
 
     id: int
-    nome: str
+    name: str
     slug: str
-    quadrienio: Optional[str] = None
+    quadrennium: Optional[str] = None
     created_at: datetime
     total_documents: int = Field(default=0)
     completed_documents: int = Field(default=0)
@@ -566,9 +686,9 @@ class InformativoResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "id": 1,
-                "nome": "Ciência da Computação",
+                "name": "Ciência da Computação",
                 "slug": "ciencia_da_computacao",
-                "quadrienio": "2025-2028",
+                "quadrennium": "2025-2028",
                 "created_at": "2026-09-04T12:00:00Z",
                 "total_documents": 3,
                 "completed_documents": 2,
@@ -577,19 +697,19 @@ class InformativoResponse(BaseModel):
     }
 
 
-class InformativoListResponse(BaseModel):
-    """Response model for informativo listing"""
+class CorpusListResponse(BaseModel):
+    """Response model for corpus listing"""
 
     total: int
-    items: List[InformativoResponse]
+    items: List[CorpusResponse]
 
 
-class InformativoDocumentResponse(BaseModel):
-    """Response model for an informativo document + its conversion state"""
+class CorpusDocumentResponse(BaseModel):
+    """Response model for a corpus document + its conversion state"""
 
     id: int
-    informativo_id: int
-    kind: str  # ficha | anexo | adendo
+    corpus_id: int
+    kind: str  # form | attachment | addendum
     status: str  # pending | processing | completed | failed
     error: Optional[str] = None
     original_file_id: Optional[int] = None
@@ -605,8 +725,8 @@ class InformativoDocumentResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "id": 7,
-                "informativo_id": 1,
-                "kind": "ficha",
+                "corpus_id": 1,
+                "kind": "form",
                 "status": "completed",
                 "original_file_name": "COMPUTACAO_FICHA_2025_2028.pdf",
                 "converted_file_name": "doc_7.json",
@@ -616,8 +736,45 @@ class InformativoDocumentResponse(BaseModel):
     }
 
 
-class InformativoDocumentListResponse(BaseModel):
-    """Response model for the documents of an informativo"""
+class CorpusDocumentListResponse(BaseModel):
+    """Response model for the documents of a corpus"""
 
-    informativo_id: int
-    items: List[InformativoDocumentResponse]
+    corpus_id: int
+    items: List[CorpusDocumentResponse]
+
+
+class AreaResponse(BaseModel):
+    """Area row: filename code -> official name -> textual key -> ids/status."""
+
+    code: str
+    name: str
+    key: str
+    corpus_id: Optional[int] = None
+    document_id: Optional[int] = None
+    converted_file_id: Optional[int] = None
+    status: Optional[str] = None  # conversion status of the form document
+    quadrennium: Optional[str] = None
+    drive_file_id: Optional[str] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "code": "COMPUTACAO",
+                "name": "Computação",
+                "key": "computacao",
+                "corpus_id": 3,
+                "document_id": 7,
+                "converted_file_id": 12,
+                "status": "completed",
+                "quadrennium": "2025-2028",
+                "drive_file_id": "1wKFaYpVM7wg3wcF9EHYi5sLy0tQY_eF_",
+            }
+        }
+    }
+
+
+class AreaListResponse(BaseModel):
+    """Area listing: every catalogued CAPES area."""
+
+    total: int
+    items: List[AreaResponse]

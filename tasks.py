@@ -447,3 +447,50 @@ def run_analysis_crew_with_tracking(
             "status": "failed",
             "message": f"APOEMA Crew analysis failed (non-transient): {str(e)[:200]}",
         }
+
+
+@dramatiq.actor(
+    max_retries=1,
+    time_limit=7_200_000,  # 120 minutes: many reports, each with dozens of charts
+    min_backoff=10_000,
+    max_backoff=60_000,
+    priority=5,  # queue-management priority, above the analysis run actors
+)
+def ingest_report_batch(
+    reports: list,
+    model: str = "ollama",
+    important_programs: list = None,
+) -> dict:
+    """Ingest a list of APOEMA reports, one at a time.
+
+    Each report is consumed by ``report_service.ingest_report``, which fetches
+    the report's charts and enqueues one ``png_csv`` analysis per chart (through
+    the existing sequential-processing gate). The reports are processed
+    serially in list order; a report that fails to resolve (e.g. its area has no
+    ingested ficha) is recorded and skipped without aborting the rest.
+
+    Returns:
+        A per-report summary: {report_id: {status, created, skipped, failed}}
+    """
+    from api.report_service import ingest_report
+
+    results = {}
+    for report_id in reports:
+        try:
+            logger.info(f"[Reports] Ingesting report {report_id} ...")
+            resp = ingest_report(report_id, model, important_programs)
+            results[report_id] = {
+                "status": "ok",
+                "created": resp.created,
+                "skipped": resp.skipped,
+                "failed": resp.failed,
+            }
+            logger.info(
+                f"[Reports] {report_id} done: created={resp.created} "
+                f"skipped={resp.skipped} failed={resp.failed}"
+            )
+        except Exception as e:
+            logger.error(f"[Reports] {report_id} failed: {e}")
+            results[report_id] = {"status": "error", "message": str(e)[:500]}
+
+    return {"results": results}

@@ -65,10 +65,14 @@ class Config:
         "xlsx": [".xlsx"],
     }
 
-    # Document conversion (informativo PDFs/XLSXs -> JSON)
+    # Document conversion (corpus PDFs/XLSXs -> JSON)
     CONVERTER_DIR = UPLOAD_DIR / "converted"
-    # Fichas/relatórios CAPES têm camada de texto; OCR (docling) só sob demanda
+    # CAPES forms/reports têm camada de texto; OCR (docling) só sob demanda
     CONVERTER_OCR = os.getenv("CONVERTER_OCR", "false").lower() == "true"
+
+    # Google Drive ficha ingestion
+    DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "")
+    DRIVE_AUTO_INGEST = os.getenv("DRIVE_AUTO_INGEST", "true").lower() == "true"
 
     # LLM Configuration
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

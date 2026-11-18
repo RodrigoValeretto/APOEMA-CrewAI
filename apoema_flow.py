@@ -92,7 +92,7 @@ class ApoemaFlow(Flow):
         # chunks + embeds the file and auto-injects the relevant chunks into the
         # data_reader's prompt (no tool-calling needed). Note: CrewAI prepends
         # "knowledge/" to string paths, so pass a Path object for absolute paths.
-        # Extra converted documents (anexos/adendos de um informativo) are added
+        # Extra converted documents (attachments/addenda of a corpus) are added
         # as further Knowledge sources so retrieval covers the whole corpus.
         knowledge_sources = None
         if os.path.exists(assessment_file):

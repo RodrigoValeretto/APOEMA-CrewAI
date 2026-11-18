@@ -74,18 +74,18 @@ Entrada: PNG plot + CSV data
   ↓ Output: {prefix}_plot_importance.md
 ```
 
-#### Fluxo 3: Conversão de Fichas CAPES (PDF/XLSX → JSON) via Informativo
+#### Fluxo 3: Conversão de Fichas CAPES (PDF/XLSX → JSON) via Corpus
 As fichas de avaliação da CAPES (PDF) e anexos/adendos (XLSX) são convertidos para um
-JSON enriquecido em background e agrupados por **informativo** (corpus da área, ex.
-"Ciência da Computação"). Uma análise pode ser disparada direto pelo `informativo_id`:
+JSON enriquecido em background e agrupados por **corpus** (corpus da área, ex.
+"Ciência da Computação"). Uma análise pode ser disparada direto pelo `corpus_id`:
 a ficha convertida vira o `assessment_file` e anexos/adendos entram como fontes de
 Knowledge (retrieval automático) — ver seção de endpoints abaixo.
 ```
-Upload PDF/XLSX → POST /api/informativos/{id}/documentos (kind=ficha|anexo|adendo)
+Upload PDF/XLSX → POST /api/corpora/{id}/documents (kind=form|anexo|adendo)
   ↓ fila dedicada 'conversion' (converter_worker, docling)
 JSON enriquecido (uploads/converted/doc_{id}.json) registrado em analysis_files
   ↓
-POST /api/analysis {"informativo_id": N} → ficha = assessment + anexos = Knowledge
+POST /api/analysis {"corpus_id": N} → ficha = assessment + anexos = Knowledge
 ```
 
 > **Índice de Knowledge (cache):** a coleção do ChromaDB é endereçada pelo **conteúdo**
@@ -252,6 +252,40 @@ Execução concluída!
 **Arquivos gerados:**
 - `output/output_YYYYMMDDHHMMSS.md` - Análise dos critérios
 - `output/conformance_report_YYYYMMDDHHMMSS.md` - Relatório de conformidade com validações dos gráficos
+
+## 📥 Ingestão de Fichas CAPES do Google Drive
+
+O sistema baixa automaticamente as fichas de avaliação CAPES de uma pasta pública
+do Drive e as ingere no pipeline de corpora+conversão — sem upload manual:
+
+- **Startup**: com `DRIVE_FOLDER_ID` + `DRIVE_AUTO_INGEST=true` no `.env`, a API
+  ingere a pasta a cada subida (idempotente por `drive_file_id`).
+- **Endpoint**: `POST /api/areas/ingest` re-roda sob demanda; `GET /api/areas`
+  lista o de-para (código → nome oficial CAPES → chave textual → ids/status).
+- **Chave textual**: `POST /api/analysis` aceita `corpus_key` (ex.
+  `"computacao"`, `"cb_i"`) como alternativa ao `corpus_id`.
+
+Ver QUICKSTART.md (seção "Ficha ingestion from Google Drive") e API_IMPLEMENTATION_SUMMARY.md.
+
+## 📥 Ingestão de Relatórios APOEMA (por id ou em lote)
+
+O sistema consome relatórios publicados no APOEMA (`https://sistemas.prpg.usp.br/apoema-pg/view/<id>`)
+e enfileira **uma análise `png_csv` por gráfico**, todas agrupadas sob
+`report_reference` = id do relatório:
+
+- **Endpoint único**: `POST /api/reports/ingest` com `{"report_id": "<id>", "model": "ollama"}` —
+  lê `info-report` (deriva a área CAPES, ex. "Zootecnia - Recursos Pesqueiros") e `charts`
+  (lista de gráficos), baixa PNG + CSV de cada gráfico e enfileira a análise.
+- **Endpoint em lote**: `POST /api/reports/ingest-batch` com `{"reports_list": ["<id1>", "<id2>", ...]}`
+  enfileira a lista num actor Dramatiq que consome os relatórios **um por vez**, em ordem (202 imediato).
+- **Idempotente**: re-ingerir o mesmo id pula gráficos que já têm análise sob aquela referência.
+- **A área CAPES vira o assessment**: o nome da área (`@Zootecnia - Recursos Pesqueiros`) é resolvido
+  por slug para a ficha já ingerida (catálogo `CAPES_AREAS` + `area_code_from_name`).
+- **VPN da USP**: a rota do PNG (`/chart/...`, porta 443) fica atrás da VPN e pode não responder fora
+  dela — o download tem timeout configurável (`APOEMA_CHART_PNG_TIMEOUT`, default 30 s) e uma falha
+  por gráfico é registrada como `failed` sem abortar o relatório/lote.
+
+Ver QUICKSTART.md (seção "Report ingestion") e API_IMPLEMENTATION_SUMMARY.md.
 
 ## 📁 Estrutura do Projeto
 
@@ -490,7 +524,7 @@ file relatorio.pdf  # Deve retornar "PDF document"
 
 ## 📖 Documentação Adicional
 
-- **[API_IMPLEMENTATION_SUMMARY.md](./API_IMPLEMENTATION_SUMMARY.md)** - Referência completa da API HTTP (análises, informativos, report-reference, zombie cleanup)
+- **[API_IMPLEMENTATION_SUMMARY.md](./API_IMPLEMENTATION_SUMMARY.md)** - Referência completa da API HTTP (análises, corpora, report-reference, zombie cleanup)
 - **[DOCKER_SETUP.md](./DOCKER_SETUP.md)** - Stack Docker, serviços, volumes e variáveis de ambiente
 - **[TESTING_API.md](./TESTING_API.md)** - Casos de teste end-to-end da API
 - **[CAPES Criteria](https://www.gov.br/capes/)** - Critérios oficiais CAPES

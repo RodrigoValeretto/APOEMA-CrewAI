@@ -39,8 +39,11 @@ Este guia descreve como usar o Docker Compose para executar a aplicação APOEMA
 **Serviços atuais:** `postgres`, `rabbitmq`, `ollama`, `flyway`, `app` (FastAPI :8000),
 `dramatiq_worker` (fila `default` — análises; **2 processos**, o gate FIFO já
 serializa o processamento) e **`converter_worker`** (fila `conversion` — conversão de
-documentos PDF/XLSX→JSON via docling; 1 processo, volumes `./:/app` + `hf_cache` para
-os modelos HuggingFace do docling).
+documentos PDF/XLSX→JSON via docling; **1 processo × 1 thread**, volumes `./:/app` + `hf_cache`
+para os modelos HuggingFace do docling). O `--threads 1` é **obrigatório**: o docling carrega
+torch por conversão e a concorrência (default 8 threads/processo) estoura a RAM do Docker VM —
+um OOM (`Worker ... exited (code -9)`) matou o worker convertendo 8 fichas em paralelo (fix
+03/11/2026, branch `fixes-2026-11-03`).
 
 > **GPU (NVIDIA, opcional):** o serviço `ollama` aceita um override separado
 > (`docker-compose.gpu.yml`) que reserva um device NVIDIA para o container —
@@ -234,7 +237,7 @@ python main.py --help
 | status | VARCHAR(50) | Status (pending, processing, completed, failed) |
 | model | VARCHAR(50) | Modelo usado (V5) |
 | important_programs | TEXT[] | Siglas destacadas (V6) |
-| informativo_id | INTEGER | Proveniência do informativo (V7) |
+| corpus_id | INTEGER | Proveniência do corpus (V7, renomeada de `informativo_id` na V11) |
 | report_reference | VARCHAR(255) | Agrupa análises num relatório (V8, indexada) |
 | created_at | TIMESTAMP | Data de criação |
 | updated_at | TIMESTAMP | Data de última atualização |
@@ -331,6 +334,8 @@ Veja `.env.example` para lista completa de variáveis configuráveis:
 - LLM APIs: `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`
 - Ollama: `OLLAMA_MODEL` (default `qwen2.5:7b`), `OLLAMA_VISION_MODEL`, `OLLAMA_CONTEXT_LENGTH`, `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_MAX_TOKENS` (cap de geração, default 2048), `OLLAMA_TIMEOUT`, `OLLAMA_VISION_MAX_TOKENS`, `OLLAMA_EMBED_TIMEOUT`, `RAG_EMBEDDING_MODEL`
 - Zombie watchdog: `ZOMBIE_WATCHDOG_INTERVAL` (default 1800 s, `0` desativa), `ZOMBIE_WATCHDOG_THRESHOLD` (default 1800 s)
+- Drive ficha ingestion: `DRIVE_FOLDER_ID` (id da pasta pública de fichas), `DRIVE_AUTO_INGEST` (default `true` — ingere a pasta a cada subida do app)
+- Report ingestion: `APOEMA_CHART_PNG_TIMEOUT` (default 30 — timeout do download dos PNGs de gráfico; a rota `/chart/...` fica atrás da VPN da USP)
 - Aplicação: `APP_PORT`, `PYTHONUNBUFFERED`, `DEFAULT_MODEL`
 
 ## Recursos

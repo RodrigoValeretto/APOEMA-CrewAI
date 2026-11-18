@@ -35,7 +35,7 @@ Este guia descreve como integrar Dramatiq com o APOEMA para executar análises d
 | Worker | Comando (compose) | Fila | Responsabilidade |
 |---|---|---|---|
 | `dramatiq_worker` (2 processos) | `dramatiq --verbose tasks --processes 2` | `default` | Enfileiramento FIFO + execução do CrewAI (análises) |
-| `converter_worker` (1 processo) | `dramatiq conversion_tasks -Q conversion --processes 1 --verbose` | `conversion` | Conversão docling de documentos de informativo (PDF/XLSX → JSON) |
+| `converter_worker` (1 processo) | `dramatiq conversion_tasks -Q conversion --processes 1 --verbose` | `conversion` | Conversão docling de documentos de corpus (PDF/XLSX → JSON) |
 
 - O broker (RabbitMQ) é configurado uma única vez em **`dramatiq_broker.py`**
   (`set_broker`), importado por `tasks.py` e `conversion_tasks.py` antes dos
@@ -47,6 +47,20 @@ Este guia descreve como integrar Dramatiq com o APOEMA para executar análises d
 - A conversão nunca bloqueia a fila FIFO de análises: são filas independentes, e o
   docling/torch só é carregado no processo que executa a conversão (import lazy em
   `conversion/engine.py`).
+- A **ingestão de fichas do Google Drive** (`api/drive_ingestion.py`) alimenta essa
+  mesma fila `conversion`: para cada PDF baixado, cria um `corpus_documents`
+  (status `pending`) e envia `convert_corpus_document.send(document_id=...)`.
+  O `converter_worker` consome na ordem; se o worker estiver fora do ar na hora, o
+  RabbitMQ retém a mensagem até ele subir. Re-ingestão (startup ou
+  `POST /api/areas/ingest`) re-enfileira apenas documentos `pending`/`failed`.
+- A **ingestão de relatórios APOEMA** (`api/report_service.py`) roda na fila
+  `default`: o actor `ingest_report_batch` (em `tasks.py`, prioridade 5) recebe uma
+  lista de report ids e os consome **um por vez**, em ordem — cada relatório baixa
+  os charts e enfileira uma análise `png_csv` por gráfico através do gate FIFO
+  existente. Um relatório que falha a resolução é registrado (`[Reports] ...`) e
+  pulado, sem abortar os demais. O download do PNG tem timeout configurável
+  (`APOEMA_CHART_PNG_TIMEOUT`, default 30 s) porque a rota do chart fica atrás da
+  VPN da USP.
 
 ## Fluxo de Análise
 

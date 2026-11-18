@@ -9,8 +9,8 @@ from config import get_config
 from .exceptions import (
     DatabaseError,
     AnalysisNotFound,
-    InformativoNotFound,
-    InformativoDocumentNotFound,
+    CorpusNotFound,
+    CorpusDocumentNotFound,
 )
 from .constants import AnalysisStatus
 
@@ -37,7 +37,7 @@ def create_analysis(
     status: str = AnalysisStatus.PENDING.value,
     model: Optional[str] = None,
     important_programs: Optional[List[str]] = None,
-    informativo_id: Optional[int] = None,
+    corpus_id: Optional[int] = None,
     report_reference: Optional[str] = None,
 ) -> int:
     """
@@ -49,6 +49,7 @@ def create_analysis(
         model: LLM model used for the analysis (stored for retry support)
         important_programs: Program identifiers marked as important by the user
             (Sigla values from the plot CSV); stored for retry support
+        corpus_id: Corpus (CAPES area) that sourced this analysis (optional)
         report_reference: Report identifier this analysis belongs to (optional)
 
     Returns:
@@ -62,7 +63,7 @@ def create_analysis(
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO analysis (type, status, model, important_programs, informativo_id, report_reference, created_at, updated_at)
+                    INSERT INTO analysis (type, status, model, important_programs, corpus_id, report_reference, created_at, updated_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
@@ -71,7 +72,7 @@ def create_analysis(
                         status,
                         model,
                         important_programs,
-                        informativo_id,
+                        corpus_id,
                         report_reference,
                         datetime.now(),
                         datetime.now(),
@@ -103,7 +104,7 @@ def get_analysis(analysis_id: int) -> Dict[str, Any]:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     """
-                    SELECT id, type, status, model, important_programs, informativo_id, report_reference, created_at, updated_at
+                    SELECT id, type, status, model, important_programs, corpus_id, report_reference, created_at, updated_at
                     FROM analysis
                     WHERE id = %s
                     """,
@@ -138,7 +139,7 @@ def get_analyses_by_report(report_reference: str) -> List[Dict[str, Any]]:
                 cur.execute(
                     """
                     SELECT id, type, status, model, important_programs,
-                           informativo_id, report_reference, created_at, updated_at
+                           corpus_id, report_reference, created_at, updated_at
                     FROM analysis
                     WHERE report_reference = %s
                     ORDER BY id
@@ -148,6 +149,32 @@ def get_analyses_by_report(report_reference: str) -> List[Dict[str, Any]]:
                 return [dict(row) for row in cur.fetchall()]
     except psycopg.Error as e:
         raise DatabaseError(f"Failed to get analyses by report: {str(e)}")
+
+
+def get_report_png_urls(report_reference: str) -> set:
+    """PNG source URLs already analyzed under a report (idempotent re-ingest).
+
+    Used by the report-ingestion endpoint to skip charts that already have an
+    analysis, so re-triggering the endpoint does not duplicate analyses.
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT af.url
+                    FROM analysis a
+                    JOIN analysis_file_mapping afm ON afm.analysis_id = a.id
+                    JOIN analysis_files af ON af.id = afm.file_id
+                    WHERE a.report_reference = %s
+                      AND af.file_type = 'png'
+                      AND af.url IS NOT NULL
+                    """,
+                    (report_reference,),
+                )
+                return {row["url"] for row in cur.fetchall()}
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get report png urls: {str(e)}")
 
 
 def get_all_analyses(
@@ -379,6 +406,10 @@ def save_analysis_result(
     """
     Save a task result to analysis_results table
 
+    The raw result is post-processed: a JSON-object output is stored as the
+    parsed object in ``result_json`` with ``result`` NULL; anything else keeps
+    its raw text in ``result`` (``result_json`` NULL).
+
     Args:
         analysis_id: ID of the analysis
         task_name: Name of the task
@@ -390,6 +421,15 @@ def save_analysis_result(
     Raises:
         DatabaseError: If database operation fails
     """
+    from .result_processing import split_result_json
+
+    import json as _json
+
+    result_text, result_json = split_result_json(result)
+    # psycopg cannot adapt a raw Python dict to a JSONB column (it raises
+    # "cannot adapt type 'dict'"); serialize it to a JSON string so the
+    # placeholder binds correctly.
+    result_json_param = _json.dumps(result_json) if result_json is not None else None
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -402,11 +442,11 @@ def save_analysis_result(
                 )
                 cur.execute(
                     """
-                    INSERT INTO analysis_results (analysis_id, task_name, result, created_at)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO analysis_results (analysis_id, task_name, result, result_json, created_at)
+                    VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (analysis_id, task_name, result, datetime.now()),
+                    (analysis_id, task_name, result_text, result_json_param, datetime.now()),
                 )
                 result_id = cur.fetchone()[0]
                 conn.commit()
@@ -444,7 +484,7 @@ def get_analysis_results(
 
                 cur.execute(
                     f"""
-                    SELECT id, analysis_id, task_name, result, created_at
+                    SELECT id, analysis_id, task_name, result, result_json, created_at
                     FROM analysis_results
                     {where_clause}
                     ORDER BY created_at ASC
@@ -789,114 +829,157 @@ def count_older_pending_analyses(analysis_id: int) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Informativos (CAPES area document corpus) + conversion documents
+# Corpora (CAPES area document corpus) + conversion documents
 # ---------------------------------------------------------------------------
 
 _DOC_SELECT = """
-    SELECT d.id, d.informativo_id, d.kind, d.status, d.error,
+    SELECT d.id, d.corpus_id, d.kind, d.status, d.error,
            d.original_file_id, d.converted_file_id,
+           d.drive_file_id,
            d.created_at, d.updated_at,
            fo.file_name AS original_file_name, fo.file_path AS original_file_path,
            fo.file_size AS original_file_size,
            fc.file_name AS converted_file_name, fc.file_path AS converted_file_path,
            fc.file_size AS converted_file_size
-    FROM informativo_documents d
+    FROM corpus_documents d
     LEFT JOIN analysis_files fo ON fo.id = d.original_file_id
     LEFT JOIN analysis_files fc ON fc.id = d.converted_file_id
 """
 
 
-def create_informativo(nome: str, slug: str, quadrienio: Optional[str] = None) -> int:
-    """Create an informativo (CAPES area corpus). Raises DatabaseError if slug exists."""
+def create_corpus(name: str, slug: str, quadrennium: Optional[str] = None) -> int:
+    """Create a corpus (CAPES area corpus). Raises DatabaseError if slug exists."""
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO informativos (nome, slug, quadrienio, created_at)
+                    INSERT INTO corpora (name, slug, quadrennium, created_at)
                     VALUES (%s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (nome, slug, quadrienio, datetime.now()),
+                    (name, slug, quadrennium, datetime.now()),
                 )
                 row = cur.fetchone()
-                informativo_id = row[0] if row else None
+                corpus_id = row[0] if row else None
                 conn.commit()
-                return informativo_id
+                return corpus_id
     except psycopg.errors.UniqueViolation:
-        raise DatabaseError(f"Informativo with slug '{slug}' already exists")
+        raise DatabaseError(f"Corpus with slug '{slug}' already exists")
     except psycopg.Error as e:
-        raise DatabaseError(f"Failed to create informativo: {str(e)}")
+        raise DatabaseError(f"Failed to create corpus: {str(e)}")
 
 
-def get_informativo(informativo_id: int) -> Dict[str, Any]:
-    """Get an informativo row (raises InformativoNotFound)."""
+def get_corpus(corpus_id: int) -> Dict[str, Any]:
+    """Get a corpus row (raises CorpusNotFound)."""
     try:
         with get_connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     """
-                    SELECT id, nome, slug, quadrienio, created_at
-                    FROM informativos WHERE id = %s
+                    SELECT id, name, slug, quadrennium, created_at
+                    FROM corpora WHERE id = %s
                     """,
-                    (informativo_id,),
+                    (corpus_id,),
                 )
                 row = cur.fetchone()
                 if not row:
-                    raise InformativoNotFound(informativo_id)
+                    raise CorpusNotFound(corpus_id)
                 return dict(row)
-    except InformativoNotFound:
+    except CorpusNotFound:
         raise
     except psycopg.Error as e:
-        raise DatabaseError(f"Failed to get informativo: {str(e)}")
+        raise DatabaseError(f"Failed to get corpus: {str(e)}")
 
 
-def list_informativos() -> List[Dict[str, Any]]:
-    """List all informativos (newest first) with document counts."""
+def get_corpus_by_slug(slug: str) -> Optional[Dict[str, Any]]:
+    """Get a corpus row by slug, or None if it does not exist."""
     try:
         with get_connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     """
-                    SELECT i.id, i.nome, i.slug, i.quadrienio, i.created_at,
+                    SELECT id, name, slug, quadrennium, created_at
+                    FROM corpora WHERE slug = %s
+                    """,
+                    (slug,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get corpus by slug: {str(e)}")
+
+
+def list_corpora() -> List[Dict[str, Any]]:
+    """List all corpora (newest first) with document counts."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT i.id, i.name, i.slug, i.quadrennium, i.created_at,
                            COUNT(d.id) AS total_documents,
                            COUNT(d.id) FILTER (WHERE d.status = 'completed') AS completed_documents
-                    FROM informativos i
-                    LEFT JOIN informativo_documents d ON d.informativo_id = i.id
+                    FROM corpora i
+                    LEFT JOIN corpus_documents d ON d.corpus_id = i.id
                     GROUP BY i.id
                     ORDER BY i.id DESC
                     """
                 )
                 return [dict(r) for r in cur.fetchall()]
     except psycopg.Error as e:
-        raise DatabaseError(f"Failed to list informativos: {str(e)}")
+        raise DatabaseError(f"Failed to list corpora: {str(e)}")
 
 
-def create_informativo_document(
-    informativo_id: int, kind: str, original_file_id: int
+def create_corpus_document(
+    corpus_id: int,
+    kind: str,
+    original_file_id: int,
+    drive_file_id: Optional[str] = None,
 ) -> int:
-    """Register a document upload inside an informativo (status: pending)."""
+    """Register a document upload inside a corpus (status: pending)."""
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO informativo_documents
-                        (informativo_id, kind, status, original_file_id, created_at, updated_at)
-                    VALUES (%s, %s, 'pending', %s, %s, %s)
+                    INSERT INTO corpus_documents
+                        (corpus_id, kind, status, original_file_id, drive_file_id, created_at, updated_at)
+                    VALUES (%s, %s, 'pending', %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (informativo_id, kind, original_file_id, datetime.now(), datetime.now()),
+                    (
+                        corpus_id,
+                        kind,
+                        original_file_id,
+                        drive_file_id,
+                        datetime.now(),
+                        datetime.now(),
+                    ),
                 )
                 row = cur.fetchone()
                 doc_id = row[0] if row else None
                 conn.commit()
                 return doc_id
     except psycopg.Error as e:
-        raise DatabaseError(f"Failed to create informativo document: {str(e)}")
+        raise DatabaseError(f"Failed to create corpus document: {str(e)}")
 
 
-def get_informativo_document(document_id: int) -> Dict[str, Any]:
+def get_corpus_document_by_drive_file_id(
+    drive_file_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Get a document by its Google Drive file id, or None (dedupe)."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(_DOC_SELECT + " WHERE d.drive_file_id = %s", (drive_file_id,))
+                row = cur.fetchone()
+                return dict(row) if row else None
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get document by drive file id: {str(e)}")
+
+
+def get_corpus_document(document_id: int) -> Dict[str, Any]:
     """Get a document row joined with source/converted file info."""
     try:
         with get_connection() as conn:
@@ -904,34 +987,35 @@ def get_informativo_document(document_id: int) -> Dict[str, Any]:
                 cur.execute(_DOC_SELECT + " WHERE d.id = %s", (document_id,))
                 row = cur.fetchone()
                 if not row:
-                    raise InformativoDocumentNotFound(document_id)
+                    raise CorpusDocumentNotFound(document_id)
                 return dict(row)
-    except InformativoDocumentNotFound:
+    except CorpusDocumentNotFound:
         raise
     except psycopg.Error as e:
-        raise DatabaseError(f"Failed to get informativo document: {str(e)}")
+        raise DatabaseError(f"Failed to get corpus document: {str(e)}")
 
 
-def list_informativo_documents(informativo_id: int) -> List[Dict[str, Any]]:
-    """List documents of an informativo (oldest first)."""
+def list_corpus_documents(corpus_id: int) -> List[Dict[str, Any]]:
+    """List documents of a corpus (oldest first)."""
     try:
         with get_connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
-                    _DOC_SELECT + " WHERE d.informativo_id = %s ORDER BY d.id",
-                    (informativo_id,),
+                    _DOC_SELECT + " WHERE d.corpus_id = %s ORDER BY d.id",
+                    (corpus_id,),
                 )
                 return [dict(r) for r in cur.fetchall()]
     except psycopg.Error as e:
-        raise DatabaseError(f"Failed to list informativo documents: {str(e)}")
+        raise DatabaseError(f"Failed to list corpus documents: {str(e)}")
 
 
-def claim_informativo_document(document_id: int) -> bool:
+def claim_corpus_document(document_id: int) -> bool:
     """Atomically claim a pending document for conversion (pending -> processing).
 
     Returns True if this caller won the claim; False if the document is already
-    being processed or was already converted/failed. A document stuck in
-    'processing' for over 30 minutes (crashed worker mid-conversion) can be
+    being processed or was already converted. A 'failed' document is
+    re-claimable (the drive ingestion re-enqueues it to retry); a document stuck
+    in 'processing' for over 30 minutes (crashed worker mid-conversion) can be
     reclaimed — mirrors the analysis zombie-recovery lesson.
     """
     try:
@@ -939,11 +1023,12 @@ def claim_informativo_document(document_id: int) -> bool:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    UPDATE informativo_documents
+                    UPDATE corpus_documents
                     SET status = 'processing', updated_at = %s
                     WHERE id = %s
                       AND (
                         status = 'pending'
+                        OR status = 'failed'
                         OR (status = 'processing'
                             AND updated_at < %s - INTERVAL '30 minutes')
                       )
@@ -954,10 +1039,10 @@ def claim_informativo_document(document_id: int) -> bool:
                 conn.commit()
                 return claimed
     except psycopg.Error as e:
-        raise DatabaseError(f"Failed to claim informativo document: {str(e)}")
+        raise DatabaseError(f"Failed to claim corpus document: {str(e)}")
 
 
-def update_informativo_document_status(
+def update_corpus_document_status(
     document_id: int,
     status: str,
     converted_file_id: Optional[int] = None,
@@ -969,7 +1054,7 @@ def update_informativo_document_status(
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    UPDATE informativo_documents
+                    UPDATE corpus_documents
                     SET status = %s, converted_file_id = %s, error = %s, updated_at = %s
                     WHERE id = %s
                     """,
@@ -977,11 +1062,11 @@ def update_informativo_document_status(
                 )
                 conn.commit()
     except psycopg.Error as e:
-        raise DatabaseError(f"Failed to update informativo document status: {str(e)}")
+        raise DatabaseError(f"Failed to update corpus document status: {str(e)}")
 
 
 def get_completed_documents_by_kinds(
-    informativo_id: int, kinds: List[str]
+    corpus_id: int, kinds: List[str]
 ) -> List[Dict[str, Any]]:
     """Completed converted documents of the given kinds (for analysis input)."""
     try:
@@ -990,14 +1075,46 @@ def get_completed_documents_by_kinds(
                 cur.execute(
                     _DOC_SELECT
                     + """
-                      WHERE d.informativo_id = %s
+                      WHERE d.corpus_id = %s
                         AND d.kind = ANY(%s)
                         AND d.status = 'completed'
                         AND d.converted_file_id IS NOT NULL
                       ORDER BY d.id
                       """,
-                    (informativo_id, list(kinds)),
+                    (corpus_id, list(kinds)),
                 )
                 return [dict(r) for r in cur.fetchall()]
     except psycopg.Error as e:
-        raise DatabaseError(f"Failed to get informativo converted documents: {str(e)}")
+        raise DatabaseError(f"Failed to get corpus converted documents: {str(e)}")
+
+
+def get_area_rows() -> List[Dict[str, Any]]:
+    """Area rows: per corpus, its latest form document (or NULLs).
+
+    Returns one row per corpus (joined to its most recent ``kind='form'``
+    document), keyed by slug. Corpora without a form document yet still
+    appear with NULL document fields — the areas endpoint overlays the static
+    catalog on top of this.
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (i.id)
+                           i.id AS corpus_id,
+                           i.slug,
+                           i.quadrennium,
+                           d.id AS document_id,
+                           d.status,
+                           d.converted_file_id,
+                           d.drive_file_id
+                    FROM corpora i
+                    LEFT JOIN corpus_documents d
+                           ON d.corpus_id = i.id AND d.kind = 'form'
+                    ORDER BY i.id, d.id DESC NULLS LAST
+                    """
+                )
+                return [dict(r) for r in cur.fetchall()]
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get area rows: {str(e)}")

@@ -529,6 +529,8 @@ ab -n 100 -c 10 http://localhost:8000/health
 - [ ] `report_reference` agrupa análises; `GET /api/reports/{ref}` agrega (vazio = `{total: 0, analyses: []}`)
 - [ ] `POST /api/analysis/{id}/zombie-kill` marca `failed` + purga filas
 - [ ] `POST /api/zombies/cleanup` mata zumbis antigos; watchdog desligável (`ZOMBIE_WATCHDOG_INTERVAL=0`)
+- [ ] `POST /api/reports/ingest` consome um relatório APOEMA pelo id → análises `png_csv` agrupadas
+- [ ] `POST /api/reports/ingest-batch` enfileira uma lista de relatórios → ingestão um por vez (202)
 
 ---
 
@@ -555,6 +557,42 @@ curl http://localhost:8000/api/reports/relatorio-inexistente
 # → {"report_reference": "relatorio-inexistente", "total": 0, "analyses": []}
 ```
 
+## 🧪 Testando Report Ingest (consumir um relatório APOEMA publicado)
+
+```bash
+# Consome o relatório pelo id (md5 da URL .../apoema-pg/view/<id>) e enfileira
+# uma análise png_csv por gráfico, todas sob report_reference = id do relatório.
+curl -X POST http://localhost:8000/api/reports/ingest \
+  -H "Content-Type: application/json" \
+  -d "{\"report_id\": \"b4c319228b363dc55611ca3e78cb1f8a\"}"
+
+# → {report_id, report_reference, area: "Zootecnia - Recursos Pesqueiros",
+#    corpus_key: "zootecnia", total_charts: 57, created: N, skipped: M,
+#    failed: 0, charts: [{chart_id, png_url, analysis_id, status}, ...]}
+
+# Pré-requisito: a ficha da área já ingerida (POST /api/areas/ingest) e convertida.
+# Re-ingerir o mesmo id é idempotente: gráficos já analisados são "skipped".
+
+# Acompanha as análises do relatório depois:
+curl http://localhost:8000/api/reports/b4c319228b363dc55611ca3e78cb1f8a
+```
+
+## 🧪 Testando Report Ingest em lote (lista de relatórios)
+
+```bash
+# Enfileira uma lista de relatórios para ingestão um por vez (202 imediato).
+curl -X POST http://localhost:8000/api/reports/ingest-batch \
+  -H "Content-Type: application/json" \
+  -d "{\"reports_list\": [\"b4c319228b363dc55611ca3e78cb1f8a\", \"<outro-id>\"], \"model\": \"ollama\"}"
+
+# → {"total": 2, "items": [{"report_id": "...", "status": "queued"}, ...]}
+
+# O worker processa a lista em ordem; acompanhe pelo log:
+#   docker logs apoema-dramatiq-worker --since 5m | grep "\[Reports\]"
+# e depois agregue cada relatório:
+#   curl http://localhost:8000/api/reports/<id>
+```
+
 ## 🧪 Testando Zombie Cleanup (recuperação de análise presa)
 
 ```bash
@@ -571,48 +609,71 @@ curl -X POST "http://localhost:8000/api/zombies/cleanup?older_than_seconds=1800"
 
 ---
 
-## 🧪 Testando a Conversão de Documentos (Informativos — branch json-converter)
+## 🧪 Testando a Conversão de Documentos (Corpora — branch json-converter)
 
 A stack atual inclui o serviço **`converter_worker`** (`docker compose up -d` sobe tudo).
 
-### 1. Criar informativo (corpus da área)
+### 1. Criar corpus (corpus da área)
 ```bash
-curl -X POST http://localhost:8000/api/informativos \
+curl -X POST http://localhost:8000/api/corpora \
   -H "Content-Type: application/json" \
-  -d '{"nome": "Ciência da Computação", "quadrienio": "2025-2028"}'
+  -d '{"name": "Ciência da Computação", "quadrennium": "2025-2028"}'
 # → {"id": 2, "slug": "ciencia_da_computacao", ...}
 ```
 
 ### 2. Upload da ficha (PDF) e anexo (XLSX) → conversão assíncrona
 ```bash
-curl -X POST http://localhost:8000/api/informativos/2/documentos \
-  -F "file=@COMPUTACAO_FICHA_2025_2028.pdf" -F "kind=ficha"    # → doc id (status pending)
-curl -X POST http://localhost:8000/api/informativos/2/documentos \
-  -F "file=@anexo.xlsx" -F "kind=anexo"
+curl -X POST http://localhost:8000/api/corpora/2/documents \
+  -F "file=@COMPUTACAO_FICHA_2025_2028.pdf" -F "kind=form"    # → doc id (status pending)
+curl -X POST http://localhost:8000/api/corpora/2/documents \
+  -F "file=@anexo.xlsx" -F "kind=attachment"
 ```
 
 ### 3. Poll do status de conversão
 ```bash
-curl http://localhost:8000/api/informativos/2/documentos
+curl http://localhost:8000/api/corpora/2/documents
 # items[] com kind/status/error; aguardar até "completed" (~10-90s por PDF)
 # Baixar o JSON convertido:
-curl http://localhost:8000/api/informativos/2/documentos/5/conteudo -o ficha.json
+curl http://localhost:8000/api/corpora/2/documents/5/content -o ficha.json
 ```
 
-### 4. Análise disparada pelo informativo (ficha = assessment; anexos = Knowledge)
+### 4. Análise disparada pelo corpus (ficha = assessment; anexos = Knowledge)
 ```bash
 curl -X POST http://localhost:8000/api/analysis \
   -H "Content-Type: application/json" \
-  -d '{"informativo_id": 2, "model": "gemini"}'
-# → {id, type: "basic", status: "pending", informativo_id: 2}
+  -d '{"corpus_id": 2, "model": "gemini"}'
+# → {id, type: "basic", status: "pending", corpus_id: 2}
 ```
 
 ### Erros esperados (validados)
-- `kind` inválido ou extensão errada (ex.: .txt/.xlsx como `ficha`) → **400**
-- informativo inexistente / documento de outro informativo → **404**
-- `informativo_id` combinado com assessment explícito → **400**
-- análise em informativo sem ficha convertida → **400**
-- `/conteudo` de documento não convertido → **409**
+- `kind` inválido ou extensão errada (ex.: .txt/.xlsx como `form`) → **400**
+- corpus inexistente / documento de outro corpus → **404**
+- `corpus_id` combinado com assessment explícito → **400**
+- análise em corpus sem ficha convertida → **400**
+- `/content` de documento não convertido → **409**
+
+### 5. Ingestão de fichas do Drive + chave textual (feature ficha ingestion)
+```bash
+# Re-roda a ingestão da pasta pública (idempotente)
+curl -X POST http://localhost:8000/api/areas/ingest
+# → {total: 58, downloaded: 58, new_documents: 58, reenqueued: 0, skipped: 0, errors: 0}
+
+# De-para de todas as áreas (código → nome oficial → chave → ids/status)
+curl http://localhost:8000/api/areas
+# → {total: 50, items: [{codigo: "COMPUTACAO", nome: "Computação",
+#                        chave: "computacao", corpus_id: 3, ...}]}
+
+# Dispara análise pela chave textual (resolve a corpus_id por slug)
+curl -X POST http://localhost:8000/api/analysis \
+  -H "Content-Type: application/json" \
+  -d '{"corpus_key": "computacao", "model": "gemini"}'
+```
+
+### Erros esperados (feature ficha ingestion)
+- `POST /api/areas/ingest` sem `DRIVE_FOLDER_ID` configurado → **400**
+- `corpus_key` desconhecida → **400** (mensagem aponta para `GET /api/areas`)
+- `corpus_key` + `corpus_id` juntos → **400** (mutuamente exclusivos)
+- `corpus_key` + assessment explícito → **400**
 
 ---
 
@@ -625,6 +686,6 @@ curl -X POST http://localhost:8000/api/analysis \
 
 ---
 
-**Última atualização:** Outubro 2026 (features report-reference, zombie-kill, cap de texto e estatísticas determinísticas do CSV)
-**Versão:** 2.2.0
+**Última atualização:** Novembro 2026 (fixes: `DRIVE_*` wired no docker-compose, `corpus_key` normalizado antes da validação, converter worker `--threads 1` p/ evitar OOM; **report ingest**: `POST /api/reports/ingest` consome um relatório APOEMA pelo id e enfileira uma análise por gráfico; **batch**: `POST /api/reports/ingest-batch` enfileira uma lista de relatórios para ingestão um por vez; **result_json**: resultados de task que são objeto JSON passam a ser armazenados parseados em `result_json` com `result` = null; **corpus**: `corpus_id`/`corpus_key` renomeados para `corpus_id`/`corpus_key` na API e na coluna `analysis.corpus_id` (V11))
+**Versão:** 2.3.0
 **Status:** Pronto para testes ✅
