@@ -92,37 +92,37 @@ class TestListDriveFolder:
 class _FakeDatabase:
     """Records the calls ingest_drive_folder makes against the DB layer."""
 
-    def __init__(self, docs_by_file_id=None, informativos_by_slug=None):
+    def __init__(self, docs_by_file_id=None, corpora_by_slug=None):
         self.docs_by_file_id = docs_by_file_id or {}
-        self.informativos_by_slug = informativos_by_slug or {}
-        self.created_informativos = []
+        self.corpora_by_slug = corpora_by_slug or {}
+        self.created_corpora = []
         self.created_documents = []
-        self.next_informativo_id = 1
+        self.next_corpus_id = 1
         self.next_document_id = 1
 
-    def get_informativo_document_by_drive_file_id(self, file_id):
+    def get_corpus_document_by_drive_file_id(self, file_id):
         return self.docs_by_file_id.get(file_id)
 
-    def get_informativo_by_slug(self, slug):
-        return self.informativos_by_slug.get(slug)
+    def get_corpus_by_slug(self, slug):
+        return self.corpora_by_slug.get(slug)
 
-    def create_informativo(self, nome, slug, quadrienio):
-        iid = self.next_informativo_id
-        self.next_informativo_id += 1
-        self.created_informativos.append(
-            {"nome": nome, "slug": slug, "quadrienio": quadrienio}
+    def create_corpus(self, name, slug, quadrennium):
+        cid = self.next_corpus_id
+        self.next_corpus_id += 1
+        self.created_corpora.append(
+            {"name": name, "slug": slug, "quadrennium": quadrennium}
         )
-        self.informativos_by_slug[slug] = {"id": iid}
-        return iid
+        self.corpora_by_slug[slug] = {"id": cid}
+        return cid
 
-    def create_informativo_document(
-        self, informativo_id, kind, original_file_id, drive_file_id=None
+    def create_corpus_document(
+        self, corpus_id, kind, original_file_id, drive_file_id=None
     ):
         did = self.next_document_id
         self.next_document_id += 1
         self.created_documents.append(
             {
-                "informativo_id": informativo_id,
+                "corpus_id": corpus_id,
                 "kind": kind,
                 "original_file_id": original_file_id,
                 "drive_file_id": drive_file_id,
@@ -154,7 +154,7 @@ def _install_fakes(monkeypatch, db, entries, sent):
 
     # Avoid importing the real conversion_tasks (pulls dramatiq broker).
     fake_ct = types.ModuleType("conversion_tasks")
-    fake_ct.convert_informativo_document = types.SimpleNamespace(
+    fake_ct.convert_corpus_document = types.SimpleNamespace(
         send=lambda **kw: sent.append(kw)
     )
     monkeypatch.setitem(sys.modules, "conversion_tasks", fake_ct)
@@ -178,14 +178,14 @@ class TestIngestDriveFolder:
             "skipped": 0,
             "errors": 0,
         }
-        assert db.created_informativos == [
-            {"nome": "Computação", "slug": "computacao", "quadrienio": "2025-2028"}
+        assert db.created_corpora == [
+            {"name": "Computação", "slug": "computacao", "quadrennium": "2025-2028"}
         ]
         assert len(db.created_documents) == 1
         doc = db.created_documents[0]
-        assert doc["kind"] == "ficha"
+        assert doc["kind"] == "form"
         assert doc["drive_file_id"] == "f1"
-        assert doc["informativo_id"] == 1
+        assert doc["corpus_id"] == 1
         assert sent == [{"document_id": 1}]
 
     def test_completed_doc_is_skipped_idempotently(self, monkeypatch):
@@ -257,10 +257,10 @@ class TestIngestDriveFolder:
         stats = ingest_drive_folder(FOLDER)
 
         assert stats["skipped"] == 1
-        assert db.created_informativos == []
+        assert db.created_corpora == []
         assert sent == []
 
-    def test_anexo_belongs_to_parent_area(self, monkeypatch):
+    def test_attachment_belongs_to_parent_area(self, monkeypatch):
         db = _FakeDatabase()
         sent = []
         entries = [{"file_id": "f1", "name": "BIOTEC_ANEXO_FICHA_2025_2028.pdf"}]
@@ -269,8 +269,8 @@ class TestIngestDriveFolder:
         stats = ingest_drive_folder(FOLDER)
 
         assert stats["new_documents"] == 1
-        assert db.created_informativos[0]["slug"] == "biotec"
-        assert db.created_documents[0]["kind"] == "anexo"
+        assert db.created_corpora[0]["slug"] == "biotec"
+        assert db.created_documents[0]["kind"] == "attachment"
 
     def test_bad_file_does_not_abort_the_run(self, monkeypatch):
         """Per-file isolation: a download failure counts an error, the next
@@ -297,7 +297,7 @@ class TestIngestDriveFolder:
             drive_ingestion, "_save_downloaded_pdf", lambda name, c: 900
         )
         fake_ct = types.ModuleType("conversion_tasks")
-        fake_ct.convert_informativo_document = types.SimpleNamespace(
+        fake_ct.convert_corpus_document = types.SimpleNamespace(
             send=lambda **kw: sent.append(kw)
         )
         monkeypatch.setitem(sys.modules, "conversion_tasks", fake_ct)
@@ -306,18 +306,18 @@ class TestIngestDriveFolder:
 
         # The bad file's download failed: it counts an error, no document is
         # registered for it, and the good file is still processed afterwards
-        # (per-file isolation). NB: the informativo is created BEFORE the
+        # (per-file isolation). NB: the corpus is created BEFORE the
         # download (drive_ingestion.py:143-150), so the failed area still gets
-        # an informativo row — harmless, and reused idempotently on the next run.
+        # a corpus row — harmless, and reused idempotently on the next run.
         assert stats["errors"] == 1
         assert stats["new_documents"] == 1
-        assert [d["kind"] for d in db.created_documents] == ["ficha"]
+        assert [d["kind"] for d in db.created_documents] == ["form"]
         assert db.created_documents[0]["drive_file_id"] == "good"
-        assert db.created_informativos[-1]["slug"] == "direito"
+        assert db.created_corpora[-1]["slug"] == "direito"
 
-    def test_reuses_existing_informativo_by_slug(self, monkeypatch):
+    def test_reuses_existing_corpus_by_slug(self, monkeypatch):
         db = _FakeDatabase(
-            informativos_by_slug={"computacao": {"id": 42}}
+            corpora_by_slug={"computacao": {"id": 42}}
         )
         sent = []
         entries = [{"file_id": "f1", "name": "COMPUTACAO_FICHA_2025_2028.pdf"}]
@@ -326,14 +326,14 @@ class TestIngestDriveFolder:
         stats = ingest_drive_folder(FOLDER)
 
         assert stats["new_documents"] == 1
-        assert db.created_informativos == []
-        assert db.created_documents[0]["informativo_id"] == 42
+        assert db.created_corpora == []
+        assert db.created_documents[0]["corpus_id"] == 42
 
 
 # ── Real de-para endpoint ───────────────────────────────────────────────────
 
 
-class TestFichasDeParaEndpoint:
+class TestAreasEndpoint:
     def test_returns_all_50_catalogued_areas(self, monkeypatch):
         from fastapi.testclient import TestClient
 
@@ -341,19 +341,19 @@ class TestFichasDeParaEndpoint:
 
         # No ingested rows yet: every area should appear with null ids/status.
         monkeypatch.setattr(
-            api_module.database, "get_ficha_de_para_rows", lambda: []
+            api_module.database, "get_area_rows", lambda: []
         )
         # No lifespan context -> zombie watchdog / drive auto-ingest do not run.
         client = TestClient(api_module.app)
 
-        resp = client.get("/api/fichas")
+        resp = client.get("/api/areas")
 
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["total"] == 50
         assert len(body["items"]) == 50
         first = body["items"][0]
-        assert first["informativo_id"] is None
+        assert first["corpus_id"] is None
         assert first["status"] is None
 
     def test_overlays_ingested_state(self, monkeypatch):
@@ -363,30 +363,30 @@ class TestFichasDeParaEndpoint:
 
         monkeypatch.setattr(
             api_module.database,
-            "get_ficha_de_para_rows",
+            "get_area_rows",
             lambda: [
                 {
                     "slug": "computacao",
-                    "informativo_id": 3,
-                    "documento_id": 7,
+                    "corpus_id": 3,
+                    "document_id": 7,
                     "converted_file_id": 12,
                     "status": "completed",
-                    "quadrienio": "2025-2028",
+                    "quadrennium": "2025-2028",
                     "drive_file_id": "abc123",
                 }
             ],
         )
         client = TestClient(api_module.app)
 
-        resp = client.get("/api/fichas")
+        resp = client.get("/api/areas")
         assert resp.status_code == 200
-        by_key = {i["chave"]: i for i in resp.json()["items"]}
+        by_key = {i["key"]: i for i in resp.json()["items"]}
 
-        assert by_key["computacao"]["informativo_id"] == 3
+        assert by_key["computacao"]["corpus_id"] == 3
         assert by_key["computacao"]["status"] == "completed"
         assert by_key["computacao"]["drive_file_id"] == "abc123"
         # Un-ingested area stays null.
-        assert by_key["adm"]["informativo_id"] is None
+        assert by_key["adm"]["corpus_id"] is None
 
 
 class TestClaimAcceptsFailed:
@@ -425,7 +425,7 @@ class TestClaimAcceptsFailed:
                 pass
 
         monkeypatch.setattr(database, "get_connection", lambda: _Conn())
-        database.claim_informativo_document(123)
+        database.claim_corpus_document(123)
         return captured
 
     def test_claim_accepts_failed_status(self, monkeypatch):

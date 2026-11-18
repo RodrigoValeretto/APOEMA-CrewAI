@@ -9,7 +9,7 @@ import json
 import pytest
 
 from conversion.serialize import (
-    FORMATO,
+    FORMAT,
     render_markdown_table,
     serialize_pdf_docling,
     serialize_xlsx,
@@ -85,62 +85,62 @@ class TestSerializePdfDocling:
     def test_blocks_in_reading_order(self):
         result = serialize_pdf_docling(
             _docling_export(),
-            documento="COMPUTACAO_FICHA_2025_2028.pdf",
-            tipo_documento="ficha",
-            informativo="ciencia_da_computacao",
-            quadrienio="2025-2028",
+            document="COMPUTACAO_FICHA_2025_2028.pdf",
+            document_type="form",
+            corpus="ciencia_da_computacao",
+            quadrennium="2025-2028",
             sha256="abc123",
         )
-        assert result["formato"] == FORMATO
-        assert result["tipo_documento"] == "ficha"
-        assert result["documento"] == "COMPUTACAO_FICHA_2025_2028.pdf"
-        assert result["informativo"] == "ciencia_da_computacao"
-        assert result["quadrienio"] == "2025-2028"
-        assert result["origem"]["formato_arquivo"] == "pdf"
-        assert result["origem"]["sha256"] == "abc123"
+        assert result["format"] == FORMAT
+        assert result["document_type"] == "form"
+        assert result["document"] == "COMPUTACAO_FICHA_2025_2028.pdf"
+        assert result["corpus"] == "ciencia_da_computacao"
+        assert result["quadrennium"] == "2025-2028"
+        assert result["source"]["file_format"] == "pdf"
+        assert result["source"]["sha256"] == "abc123"
 
-        # picture + whitespace-only text must be dropped: texto(1) tabela(3)
-        blocos = result["blocos"]
-        assert [b["tipo"] for b in blocos] == ["texto", "tabela"]
-        assert blocos[0]["pagina"] == 1
-        assert blocos[0]["texto"] == "Fichas de Avaliação Acadêmico e Profissional"
+        # picture + whitespace-only text must be dropped: text(1) table(1)
+        blocks = result["blocks"]
+        assert [b["type"] for b in blocks] == ["text", "table"]
+        assert blocks[0]["page"] == 1
+        assert blocks[0]["text"] == "Fichas de Avaliação Acadêmico e Profissional"
 
     def test_table_headers_rows_markdown(self):
         result = serialize_pdf_docling(
             _docling_export(),
-            documento="x.pdf",
-            tipo_documento="ficha",
-            informativo="cc",
+            document="x.pdf",
+            document_type="form",
+            corpus="cc",
         )
-        tabela = result["blocos"][1]
-        assert tabela["tipo"] == "tabela"
-        assert tabela["pagina"] == 3
-        assert tabela["cabecalhos"] == ["Quesitos/Itens", "Peso", "Peso"]
-        assert tabela["linhas"][0] == ["1 – PROGRAMA", "Acadêmico", "Profissional"]
-        assert tabela["linhas"][1][1] == "50%"
-        assert "| Quesitos/Itens | Peso | Peso |" in tabela["markdown"]
-        assert "| --- | --- | --- |" in tabela["markdown"]
-        assert "| 1.1. Identidade e condições | 50% | 50% |" in tabela["markdown"]
+        table = result["blocks"][1]
+        assert table["type"] == "table"
+        assert table["page"] == 3
+        assert table["headers"] == ["Quesitos/Itens", "Peso", "Peso"]
+        assert table["rows"][0] == ["1 – PROGRAMA", "Acadêmico", "Profissional"]
+        assert table["rows"][1][1] == "50%"
+        assert "| Quesitos/Itens | Peso | Peso |" in table["markdown"]
+        assert "| --- | --- | --- |" in table["markdown"]
+        assert "| 1.1. Identidade e condições | 50% | 50% |" in table["markdown"]
 
     def test_empty_export_produces_no_blocks(self):
         result = serialize_pdf_docling(
             {"body": {"children": []}, "texts": [], "tables": [], "pictures": []},
-            documento="x.pdf",
-            tipo_documento="anexo",
-            informativo="adm",
+            document="x.pdf",
+            document_type="attachment",
+            corpus="adm",
         )
-        assert result["blocos"] == []
+        assert result["blocks"] == []
 
     def test_json_roundtrip(self):
         result = serialize_pdf_docling(
             _docling_export(),
-            documento="x.pdf",
-            tipo_documento="ficha",
-            informativo="cc",
+            document="x.pdf",
+            document_type="form",
+            corpus="cc",
         )
         # must be JSON-serializable (datetime-free) for the converter job
         json.dumps(result, ensure_ascii=False)
-        assert isinstance(result["blocos"][1]["linhas"][1][1], str)
+        assert isinstance(result["blocks"][1]["rows"][1][1], str)
 
 
 class TestRenderMarkdown:
@@ -155,7 +155,7 @@ class TestRenderMarkdown:
 
 
 class TestSerializeXlsx:
-    def test_planilha_blocks(self, tmp_path):
+    def test_spreadsheet_blocks(self, tmp_path):
         openpyxl = pytest.importorskip("openpyxl")
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -172,16 +172,16 @@ class TestSerializeXlsx:
 
         result = serialize_xlsx(
             str(path),
-            documento="anexo.xlsx",
-            tipo_documento="anexo",
-            informativo="ciencia_da_computacao",
+            document="anexo.xlsx",
+            document_type="attachment",
+            corpus="ciencia_da_computacao",
         )
-        assert result["origem"]["formato_arquivo"] == "xlsx"
-        assert result["origem"]["abas"] == ["ANEXO 3", "ANEXO 4"]
-        blocos = result["blocos"]
-        assert [b["tipo"] for b in blocos] == ["planilha", "planilha"]
-        assert blocos[0]["aba"] == "ANEXO 3"
+        assert result["source"]["file_format"] == "xlsx"
+        assert result["source"]["sheets"] == ["ANEXO 3", "ANEXO 4"]
+        blocks = result["blocks"]
+        assert [b["type"] for b in blocks] == ["spreadsheet", "spreadsheet"]
+        assert blocks[0]["sheet"] == "ANEXO 3"
         # header labels typed as text stay str; numeric cells keep their type
-        assert blocos[0]["linhas"] == [["Indicador", "2024", "2025"], ["Artigos A1", 12, 15]]
-        assert blocos[1]["linhas"] == [["Programa", "Conceito"], ["CC", "5"]]
-        assert "| Artigos A1 | 12 | 15 |" in blocos[0]["markdown"]
+        assert blocks[0]["rows"] == [[ "Indicador", "2024", "2025"], ["Artigos A1", 12, 15]]
+        assert blocks[1]["rows"] == [["Programa", "Conceito"], ["CC", "5"]]
+        assert "| Artigos A1 | 12 | 15 |" in blocks[0]["markdown"]

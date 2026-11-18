@@ -1,4 +1,4 @@
-"""Tests for informativo validation rules and helpers (no DB required)."""
+"""Tests for corpus validation rules and helpers (no DB required)."""
 from api.constants import (
     ALLOWED_FILE_EXTENSIONS,
     KIND_ALLOWED_EXTENSIONS,
@@ -20,7 +20,7 @@ class TestSlugify:
         )
 
     def test_empty_falls_back(self):
-        assert slugify("!!!") == "informativo"
+        assert slugify("!!!") == "corpus"
 
 
 class TestValidateAnalysisRequestCorpus:
@@ -86,7 +86,10 @@ class TestAllowedExtensions:
         assert FileType.XLSX.value == "xlsx"
         assert ALLOWED_FILE_EXTENSIONS["xlsx"] == [".xlsx"]
 
+    def test_attachment_type_registered(self):
+        assert FileType.ATTACHMENT.value == "attachment"
+
     def test_kind_extension_matrix(self):
-        assert KIND_ALLOWED_EXTENSIONS[DocumentKind.FICHA.value] == [".pdf"]
-        for kind in (DocumentKind.ANEXO.value, DocumentKind.ADENDO.value):
+        assert KIND_ALLOWED_EXTENSIONS[DocumentKind.FORM.value] == [".pdf"]
+        for kind in (DocumentKind.ATTACHMENT.value, DocumentKind.ADDENDUM.value):
             assert KIND_ALLOWED_EXTENSIONS[kind] == [".pdf", ".xlsx"]

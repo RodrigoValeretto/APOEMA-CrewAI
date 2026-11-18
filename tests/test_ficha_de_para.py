@@ -1,61 +1,61 @@
-"""Tests for the ficha de-para endpoint (catalog overlay + DB join)."""
-from api.fichas_catalog import FICHA_AREAS, ficha_key
+"""Tests for the areas endpoint (catalog overlay + DB join)."""
+from api.areas_catalog import CAPES_AREAS, area_key
 
 
 def test_catalog_covers_50_areas():
-    assert len(FICHA_AREAS) == 50
+    assert len(CAPES_AREAS) == 50
 
 
-def test_de_para_merge_overlay(monkeypatch):
+def test_areas_merge_overlay(monkeypatch):
     """A DB row (by slug) fills ids/status; missing areas stay null."""
     from api import api as api_module
 
     fake_rows = [
         {
             "slug": "computacao",
-            "informativo_id": 3,
-            "documento_id": 7,
+            "corpus_id": 3,
+            "document_id": 7,
             "converted_file_id": 12,
             "status": "completed",
-            "quadrienio": "2025-2028",
+            "quadrennium": "2025-2028",
             "drive_file_id": "abc123",
         }
     ]
-    monkeypatch.setattr(api_module.database, "get_ficha_de_para_rows", lambda: fake_rows)
+    monkeypatch.setattr(api_module.database, "get_area_rows", lambda: fake_rows)
 
-    from api.models import FichaDeParaListResponse
+    from api.models import AreaListResponse
 
     # Reconstruct the merge logic (mirrors the endpoint body).
-    db_rows = {r["slug"]: r for r in api_module.database.get_ficha_de_para_rows()}
+    db_rows = {r["slug"]: r for r in api_module.database.get_area_rows()}
     items = []
-    for codigo, nome in sorted(FICHA_AREAS.items()):
-        chave = ficha_key(codigo)
-        row = db_rows.get(chave, {})
+    for code, name in sorted(CAPES_AREAS.items()):
+        key = area_key(code)
+        row = db_rows.get(key, {})
         items.append(
-            api_module.FichaDeParaResponse(
-                codigo=codigo,
-                nome=nome,
-                chave=chave,
-                informativo_id=row.get("informativo_id"),
-                documento_id=row.get("documento_id"),
+            api_module.AreaResponse(
+                code=code,
+                name=name,
+                key=key,
+                corpus_id=row.get("corpus_id"),
+                document_id=row.get("document_id"),
                 converted_file_id=row.get("converted_file_id"),
                 status=row.get("status"),
-                quadrienio=row.get("quadrienio"),
+                quadrennium=row.get("quadrennium"),
                 drive_file_id=row.get("drive_file_id"),
             )
         )
-    result = FichaDeParaListResponse(total=len(items), items=items)
+    result = AreaListResponse(total=len(items), items=items)
 
     assert result.total == 50
-    by_key = {i.chave: i for i in result.items}
+    by_key = {i.key: i for i in result.items}
 
     computacao = by_key["computacao"]
-    assert computacao.nome == "Computação"
-    assert computacao.informativo_id == 3
+    assert computacao.name == "Computação"
+    assert computacao.corpus_id == 3
     assert computacao.status == "completed"
 
     # An un-ingested area has no DB row -> nulls.
     adm = by_key["adm"]
-    assert adm.nome.startswith("Administração Pública")
-    assert adm.informativo_id is None
+    assert adm.name.startswith("Administração Pública")
+    assert adm.corpus_id is None
     assert adm.status is None
