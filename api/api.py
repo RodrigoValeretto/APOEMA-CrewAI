@@ -42,13 +42,13 @@ from .models import (
     TaskResult,
     ProgressInfo,
     FileDownloadRequest,
-    InformativoCreate,
-    InformativoResponse,
-    InformativoListResponse,
-    InformativoDocumentResponse,
-    InformativoDocumentListResponse,
-    FichaDeParaResponse,
-    FichaDeParaListResponse,
+    CorpusCreate,
+    CorpusResponse,
+    CorpusListResponse,
+    CorpusDocumentResponse,
+    CorpusDocumentListResponse,
+    AreaResponse,
+    AreaListResponse,
     ReportResponse,
     ReportAnalysisItem,
     ReportIngestRequest,
@@ -78,8 +78,8 @@ from .exceptions import (
     InvalidURL,
     InvalidFileType,
     DatabaseError,
-    InformativoNotFound,
-    InformativoDocumentNotFound,
+    CorpusNotFound,
+    CorpusDocumentNotFound,
 )
 from .validators import (
     validate_analysis_request,
@@ -98,9 +98,9 @@ from tasks import (
     enqueue_analysis_for_sequential_processing,
     ingest_report_batch,
 )
-from conversion_tasks import convert_informativo_document
+from conversion_tasks import convert_corpus_document
 from . import drive_ingestion
-from .fichas_catalog import FICHA_AREAS, ficha_key, area_code_from_name
+from .areas_catalog import CAPES_AREAS, area_key, area_code_from_name
 
 
 config = get_config()
@@ -187,11 +187,11 @@ app = FastAPI(
 setup_middleware(app)
 
 
-def _documento_response(doc: dict) -> InformativoDocumentResponse:
-    """Build an InformativoDocumentResponse from a joined DB row."""
-    return InformativoDocumentResponse(
+def _document_response(doc: dict) -> CorpusDocumentResponse:
+    """Build a CorpusDocumentResponse from a joined DB row."""
+    return CorpusDocumentResponse(
         id=doc["id"],
-        informativo_id=doc["informativo_id"],
+        corpus_id=doc["corpus_id"],
         kind=doc["kind"],
         status=doc["status"],
         error=doc.get("error"),
@@ -206,30 +206,30 @@ def _documento_response(doc: dict) -> InformativoDocumentResponse:
     )
 
 
-def _resolve_informativo_inputs(informativo_id: int):
-    """Resolve an informativo into analysis inputs.
+def _resolve_corpus_inputs(corpus_id: int):
+    """Resolve a corpus into analysis inputs.
 
     Returns:
         (assessment_file, assessment_file_id, knowledge_files, mappings):
-        the latest converted ficha becomes the assessment source and every
-        completed anexo/adendo becomes an extra Knowledge file (retrieval).
+        the latest converted form becomes the assessment source and every
+        completed attachment/addendum becomes an extra Knowledge file (retrieval).
     """
-    informativo = database.get_informativo(informativo_id)  # 404 if missing
-    fichas = database.get_completed_documents_by_kinds(
-        informativo_id, [DocumentKind.FICHA.value]
+    corpus = database.get_corpus(corpus_id)  # 404 if missing
+    forms = database.get_completed_documents_by_kinds(
+        corpus_id, [DocumentKind.FORM.value]
     )
-    if not fichas:
+    if not forms:
         raise InvalidAnalysisInput(
-            f"Informativo '{informativo['nome']}' has no converted ficha (completed). "
-            "Upload the ficha PDF and wait for the conversion job to finish."
+            f"Corpus '{corpus['name']}' has no converted form (completed). "
+            "Upload the form PDF and wait for the conversion job to finish."
         )
-    ficha = fichas[-1]  # latest converted ficha
+    form = forms[-1]  # latest converted form
     extras = database.get_completed_documents_by_kinds(
-        informativo_id, [DocumentKind.ANEXO.value, DocumentKind.ADENDO.value]
+        corpus_id, [DocumentKind.ATTACHMENT.value, DocumentKind.ADDENDUM.value]
     )
     knowledge_files = [d["converted_file_path"] for d in extras]
     mappings = [(d["converted_file_id"], CONVERTED_EXTRA_FILE_TYPE) for d in extras]
-    return ficha["converted_file_path"], ficha["converted_file_id"], knowledge_files, mappings
+    return form["converted_file_path"], form["converted_file_id"], knowledge_files, mappings
 
 
 # Exception handlers
@@ -380,13 +380,13 @@ async def create_analysis_endpoint(request: AnalysisRequest):
     try:
         # Resolve corpus_key -> corpus_id (textual key = corpus slug).
         if request.corpus_key:
-            informativo = database.get_informativo_by_slug(request.corpus_key)
-            if informativo is None:
+            corpus = database.get_corpus_by_slug(request.corpus_key)
+            if corpus is None:
                 raise InvalidAnalysisInput(
-                    f"Unknown ficha key '{request.corpus_key}'. "
-                    "See GET /api/fichas for the available keys."
+                    f"Unknown area key '{request.corpus_key}'. "
+                    "See GET /api/areas for the available keys."
                 )
-            request.corpus_id = informativo["id"]
+            request.corpus_id = corpus["id"]
             # Normalize: the textual key is resolved to its id; leaving both set
             # would trip the "mutually exclusive" check in validate_analysis_request.
             request.corpus_key = None
@@ -415,14 +415,14 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         # Validate model
         validate_model_choice(request.model)
 
-        # Resolve corpus (if provided): converted ficha = assessment,
-        # converted anexos/adendos = extra Knowledge files.
+        # Resolve corpus (if provided): converted form = assessment,
+        # converted attachments/addenda = extra Knowledge files.
         knowledge_files = []
-        informativo_mappings = []
-        converted_ficha_id = None
+        corpus_mappings = []
+        converted_form_id = None
         if request.corpus_id:
-            assessment_file, converted_ficha_id, knowledge_files, informativo_mappings = (
-                _resolve_informativo_inputs(request.corpus_id)
+            assessment_file, converted_form_id, knowledge_files, corpus_mappings = (
+                _resolve_corpus_inputs(request.corpus_id)
             )
 
         # Resolve file sources (download from URLs, resolve IDs to paths)
@@ -454,11 +454,11 @@ async def create_analysis_endpoint(request: AnalysisRequest):
         # Collect all file IDs for mapping (both downloaded and passed as reference)
         all_file_mappings = list(downloaded_file_ids)  # Downloaded files
 
-        # Corpus-sourced files: the converted ficha (assessment) and every
-        # converted anexo/adendo (knowledge extras) mapped for retry support.
-        if request.corpus_id and converted_ficha_id:
-            all_file_mappings.append((converted_ficha_id, FileType.ASSESSMENT.value))
-            all_file_mappings.extend(informativo_mappings)
+        # Corpus-sourced files: the converted form (assessment) and every
+        # converted attachment/addendum (knowledge extras) mapped for retry support.
+        if request.corpus_id and converted_form_id:
+            all_file_mappings.append((converted_form_id, FileType.ASSESSMENT.value))
+            all_file_mappings.extend(corpus_mappings)
 
         # Add file IDs that were passed as references (not downloaded)
         if request.assessment_file_id and not any(ftype == FileType.ASSESSMENT.value for _, ftype in downloaded_file_ids):
@@ -534,8 +534,8 @@ async def retry_analysis_endpoint(analysis_id: int):
             )
 
         # Rebuild the original input file paths from the stored mappings.
-        # NOTE: converted anexos/adendos share file_type 'anexo', so collect
-        # them as a list instead of a single-path dict.
+        # NOTE: converted attachments/addenda share file_type 'attachment', so
+        # collect them as a list instead of a single-path dict.
         files = database.get_analysis_files(analysis_id)
         paths = {}
         knowledge_files = []
@@ -868,7 +868,7 @@ async def ingest_report_endpoint(request: ReportIngestRequest):
     Given a report id (the md5 in ``.../apoema-pg/view/<id>``), this endpoint:
 
     1. Reads ``info-report`` to learn the CAPES area name and resolves it to an
-       informativo (by textual key) whose converted ficha becomes the assessment
+       corpus (by textual key) whose converted form becomes the assessment
        source for every chart analysis.
     2. Reads ``charts`` to list the report's charts.
     3. For each chart that has a file, downloads the PNG and fetches its CSV,
@@ -1340,30 +1340,30 @@ async def root():
 
 
 # ---------------------------------------------------------------------------
-# Informativos (CAPES area corpus) — document upload + PDF/XLSX -> JSON
+# Corpora (CAPES area corpus) — document upload + PDF/XLSX -> JSON
 # ---------------------------------------------------------------------------
 @app.get(
-    "/api/informativos",
-    response_model=InformativoListResponse,
-    tags=["Informativos"],
+    "/api/corpora",
+    response_model=CorpusListResponse,
+    tags=["Corpora"],
 )
-async def list_informativos_endpoint():
-    """List informativos (CAPES area corpora) with document counts."""
+async def list_corpora_endpoint():
+    """List corpora (CAPES area corpora) with document counts."""
     try:
-        rows = database.list_informativos()
+        rows = database.list_corpora()
         items = [
-            InformativoResponse(
+            CorpusResponse(
                 id=r["id"],
-                nome=r["nome"],
+                name=r["name"],
                 slug=r["slug"],
-                quadrienio=r.get("quadrienio"),
+                quadrennium=r.get("quadrennium"),
                 created_at=r["created_at"],
                 total_documents=r.get("total_documents", 0),
                 completed_documents=r.get("completed_documents", 0),
             )
             for r in rows
         ]
-        return InformativoListResponse(total=len(items), items=items)
+        return CorpusListResponse(total=len(items), items=items)
     except ApoemaException:
         raise
     except Exception as e:
@@ -1374,30 +1374,30 @@ async def list_informativos_endpoint():
 
 
 @app.post(
-    "/api/informativos",
-    response_model=InformativoResponse,
+    "/api/corpora",
+    response_model=CorpusResponse,
     status_code=status.HTTP_201_CREATED,
-    tags=["Informativos"],
+    tags=["Corpora"],
 )
-async def create_informativo_endpoint(request: InformativoCreate):
-    """Create an informativo (e.g. 'Ciência da Computação')."""
+async def create_corpus_endpoint(request: CorpusCreate):
+    """Create a corpus (e.g. 'Ciência da Computação')."""
     try:
-        slug = slugify(request.nome)
-        existing = [i for i in database.list_informativos() if i["slug"] == slug]
+        slug = slugify(request.name)
+        existing = [i for i in database.list_corpora() if i["slug"] == slug]
         if existing:
             raise InvalidAnalysisInput(
-                f"Informativo '{request.nome}' already exists (id {existing[0]['id']})"
+                f"Corpus '{request.name}' already exists (id {existing[0]['id']})"
             )
-        informativo_id = database.create_informativo(
-            nome=request.nome, slug=slug, quadrienio=request.quadrienio
+        corpus_id = database.create_corpus(
+            name=request.name, slug=slug, quadrennium=request.quadrennium
         )
-        informativo = database.get_informativo(informativo_id)
-        return InformativoResponse(
-            id=informativo["id"],
-            nome=informativo["nome"],
-            slug=informativo["slug"],
-            quadrienio=informativo.get("quadrienio"),
-            created_at=informativo["created_at"],
+        corpus = database.get_corpus(corpus_id)
+        return CorpusResponse(
+            id=corpus["id"],
+            name=corpus["name"],
+            slug=corpus["slug"],
+            quadrennium=corpus.get("quadrennium"),
+            created_at=corpus["created_at"],
             total_documents=0,
             completed_documents=0,
         )
@@ -1411,21 +1411,21 @@ async def create_informativo_endpoint(request: InformativoCreate):
 
 
 @app.get(
-    "/api/informativos/{informativo_id}",
-    response_model=InformativoResponse,
-    tags=["Informativos"],
+    "/api/corpora/{corpus_id}",
+    response_model=CorpusResponse,
+    tags=["Corpora"],
 )
-async def get_informativo_endpoint(informativo_id: int):
-    """Get an informativo with its document counts."""
+async def get_corpus_endpoint(corpus_id: int):
+    """Get a corpus with its document counts."""
     try:
-        informativo = database.get_informativo(informativo_id)  # 404 if missing
-        docs = database.list_informativo_documents(informativo_id)
-        return InformativoResponse(
-            id=informativo["id"],
-            nome=informativo["nome"],
-            slug=informativo["slug"],
-            quadrienio=informativo.get("quadrienio"),
-            created_at=informativo["created_at"],
+        corpus = database.get_corpus(corpus_id)  # 404 if missing
+        docs = database.list_corpus_documents(corpus_id)
+        return CorpusResponse(
+            id=corpus["id"],
+            name=corpus["name"],
+            slug=corpus["slug"],
+            quadrennium=corpus.get("quadrennium"),
+            created_at=corpus["created_at"],
             total_documents=len(docs),
             completed_documents=sum(1 for d in docs if d["status"] == ConversionStatus.COMPLETED.value),
         )
@@ -1439,27 +1439,27 @@ async def get_informativo_endpoint(informativo_id: int):
 
 
 @app.post(
-    "/api/informativos/{informativo_id}/documentos",
-    response_model=InformativoDocumentResponse,
+    "/api/corpora/{corpus_id}/documents",
+    response_model=CorpusDocumentResponse,
     status_code=status.HTTP_201_CREATED,
-    tags=["Informativos"],
+    tags=["Corpora"],
 )
-async def upload_informativo_document(
-    informativo_id: int,
+async def upload_corpus_document(
+    corpus_id: int,
     file: UploadFile = File(...),
     kind: str = Form(...),
 ):
-    """Upload a ficha (PDF) or anexo/adendo (PDF/XLSX) into an informativo.
+    """Upload a form (PDF) or attachment/addendum (PDF/XLSX) into a corpus.
 
     The upload is saved and a Dramatiq conversion job is enqueued on the
-    'conversion' queue; poll GET /api/informativos/{id}/documentos for status.
+    'conversion' queue; poll GET /api/corpora/{id}/documents for status.
     """
     try:
-        _ = database.get_informativo(informativo_id)  # 404 if missing
+        _ = database.get_corpus(corpus_id)  # 404 if missing
 
-        if kind not in (DocumentKind.FICHA.value, DocumentKind.ANEXO.value, DocumentKind.ADENDO.value):
+        if kind not in (DocumentKind.FORM.value, DocumentKind.ATTACHMENT.value, DocumentKind.ADDENDUM.value):
             raise InvalidAnalysisInput(
-                f"kind must be one of: ficha, anexo, adendo (got '{kind}')"
+                f"kind must be one of: form, attachment, addendum (got '{kind}')"
             )
 
         from pathlib import Path as _Path
@@ -1472,16 +1472,16 @@ async def upload_informativo_document(
         file_type = FileType.XLSX if file_ext == ".xlsx" else FileType.PDF
         file_id, _ = await file_manager.save_uploaded_file(file, file_type)
 
-        document_id = database.create_informativo_document(
-            informativo_id=informativo_id,
+        document_id = database.create_corpus_document(
+            corpus_id=corpus_id,
             kind=kind,
             original_file_id=file_id,
         )
         # Fire-and-forget conversion job (dedicated 'conversion' queue).
-        convert_informativo_document.send(document_id=document_id)
+        convert_corpus_document.send(document_id=document_id)
 
-        doc = database.get_informativo_document(document_id)
-        return _documento_response(doc)
+        doc = database.get_corpus_document(document_id)
+        return _document_response(doc)
     except ApoemaException:
         raise
     except Exception as e:
@@ -1492,18 +1492,18 @@ async def upload_informativo_document(
 
 
 @app.get(
-    "/api/informativos/{informativo_id}/documentos",
-    response_model=InformativoDocumentListResponse,
-    tags=["Informativos"],
+    "/api/corpora/{corpus_id}/documents",
+    response_model=CorpusDocumentListResponse,
+    tags=["Corpora"],
 )
-async def list_informativo_documents_endpoint(informativo_id: int):
-    """List the documents of an informativo (with conversion status)."""
+async def list_corpus_documents_endpoint(corpus_id: int):
+    """List the documents of a corpus (with conversion status)."""
     try:
-        _ = database.get_informativo(informativo_id)  # 404 if missing
-        docs = database.list_informativo_documents(informativo_id)
-        return InformativoDocumentListResponse(
-            informativo_id=informativo_id,
-            items=[_documento_response(d) for d in docs],
+        _ = database.get_corpus(corpus_id)  # 404 if missing
+        docs = database.list_corpus_documents(corpus_id)
+        return CorpusDocumentListResponse(
+            corpus_id=corpus_id,
+            items=[_document_response(d) for d in docs],
         )
     except ApoemaException:
         raise
@@ -1515,17 +1515,17 @@ async def list_informativo_documents_endpoint(informativo_id: int):
 
 
 @app.get(
-    "/api/informativos/{informativo_id}/documentos/{document_id}",
-    response_model=InformativoDocumentResponse,
-    tags=["Informativos"],
+    "/api/corpora/{corpus_id}/documents/{document_id}",
+    response_model=CorpusDocumentResponse,
+    tags=["Corpora"],
 )
-async def get_informativo_document_endpoint(informativo_id: int, document_id: int):
-    """Get one informativo document (conversion status + converted file info)."""
+async def get_corpus_document_endpoint(corpus_id: int, document_id: int):
+    """Get one corpus document (conversion status + converted file info)."""
     try:
-        doc = database.get_informativo_document(document_id)
-        if doc["informativo_id"] != informativo_id:
-            raise InformativoDocumentNotFound(document_id)
-        return _documento_response(doc)
+        doc = database.get_corpus_document(document_id)
+        if doc["corpus_id"] != corpus_id:
+            raise CorpusDocumentNotFound(document_id)
+        return _document_response(doc)
     except ApoemaException:
         raise
     except Exception as e:
@@ -1536,15 +1536,15 @@ async def get_informativo_document_endpoint(informativo_id: int, document_id: in
 
 
 @app.get(
-    "/api/informativos/{informativo_id}/documentos/{document_id}/conteudo",
-    tags=["Informativos"],
+    "/api/corpora/{corpus_id}/documents/{document_id}/content",
+    tags=["Corpora"],
 )
-async def get_informativo_document_content(informativo_id: int, document_id: int):
-    """Download the converted JSON of an informativo document."""
+async def get_corpus_document_content(corpus_id: int, document_id: int):
+    """Download the converted JSON of a corpus document."""
     try:
-        doc = database.get_informativo_document(document_id)
-        if doc["informativo_id"] != informativo_id:
-            raise InformativoDocumentNotFound(document_id)
+        doc = database.get_corpus_document(document_id)
+        if doc["corpus_id"] != corpus_id:
+            raise CorpusDocumentNotFound(document_id)
         if doc["status"] != ConversionStatus.COMPLETED.value:
             raise InvalidAnalysisState(
                 f"Document not converted yet (status: {doc['status']})"
@@ -1571,14 +1571,14 @@ async def get_informativo_document_content(informativo_id: int, document_id: int
 
 
 @app.post(
-    "/api/fichas/ingest",
-    tags=["Fichas"],
+    "/api/areas/ingest",
+    tags=["Areas"],
 )
-async def ingest_drive_fichas_endpoint():
-    """Re-run the Drive ficha ingestion (idempotent).
+async def ingest_drive_areas_endpoint():
+    """Re-run the Drive form ingestion (idempotent).
 
-    Downloads any new fichas/anexos added to the configured Drive folder,
-    registers them through the informativo+conversion pipeline, and re-enqueues
+    Downloads any new forms/attachments added to the configured Drive folder,
+    registers them through the corpus+conversion pipeline, and re-enqueues
     documents still pending/failed. Uses DRIVE_FOLDER_ID from config.
     """
     if not config.DRIVE_FOLDER_ID:
@@ -1601,42 +1601,42 @@ async def ingest_drive_fichas_endpoint():
 
 
 @app.get(
-    "/api/fichas",
-    response_model=FichaDeParaListResponse,
-    tags=["Fichas"],
+    "/api/areas",
+    response_model=AreaListResponse,
+    tags=["Areas"],
 )
-async def list_fichas_de_para_endpoint():
-    """De-para of every catalogued CAPES ficha area.
+async def list_areas_endpoint():
+    """Every catalogued CAPES area.
 
     Merges the static catalog (filename code -> official name -> textual key)
-    with the ingestion state from the DB (informativo/document ids, conversion
-    status, quadriênio, drive file id). Areas not yet ingested have null ids
+    with the ingestion state from the DB (corpus/document ids, conversion
+    status, quadrennium, drive file id). Areas not yet ingested have null ids
     and status, so this doubles as the "what's missing" panel.
     """
     try:
         db_rows = {
             r["slug"]: r
-            for r in database.get_ficha_de_para_rows()
+            for r in database.get_area_rows()
             if r.get("slug")
         }
         items = []
-        for codigo, nome in sorted(FICHA_AREAS.items(), key=lambda kv: kv[0]):
-            chave = ficha_key(codigo)
-            row = db_rows.get(chave, {})
+        for code, name in sorted(CAPES_AREAS.items(), key=lambda kv: kv[0]):
+            key = area_key(code)
+            row = db_rows.get(key, {})
             items.append(
-                FichaDeParaResponse(
-                    codigo=codigo,
-                    nome=nome,
-                    chave=chave,
-                    informativo_id=row.get("informativo_id"),
-                    documento_id=row.get("documento_id"),
+                AreaResponse(
+                    code=code,
+                    name=name,
+                    key=key,
+                    corpus_id=row.get("corpus_id"),
+                    document_id=row.get("document_id"),
                     converted_file_id=row.get("converted_file_id"),
                     status=row.get("status"),
-                    quadrienio=row.get("quadrienio"),
+                    quadrennium=row.get("quadrennium"),
                     drive_file_id=row.get("drive_file_id"),
                 )
             )
-        return FichaDeParaListResponse(total=len(items), items=items)
+        return AreaListResponse(total=len(items), items=items)
     except ApoemaException:
         raise
     except Exception as e:

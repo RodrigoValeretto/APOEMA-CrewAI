@@ -1,7 +1,7 @@
 """Shared report-ingestion logic used by the single-report endpoint and the batch actor.
 
 ``ingest_report`` consumes one APOEMA report (by id) end-to-end: it resolves the
-report's CAPES area to an informativo (assessment source), fetches the chart
+report's CAPES area to a corpus (assessment source), fetches the chart
 list, downloads each chart's PNG + CSV, creates one ``png_csv`` analysis per
 chart (all under ``report_reference`` = report id) and enqueues it through the
 sequential-processing gate. It is fully synchronous so the Dramatiq batch actor
@@ -22,36 +22,36 @@ from .constants import (
     FileType,
 )
 from .exceptions import InvalidAnalysisInput
-from .fichas_catalog import area_code_from_name, ficha_key
+from .areas_catalog import area_code_from_name, area_key
 from .models import ReportIngestItem, ReportIngestResponse
 
 logger = logging.getLogger(__name__)
 
 
-def _resolve_informativo_inputs(informativo_id: int):
-    """Resolve an informativo into analysis inputs.
+def _resolve_corpus_inputs(corpus_id: int):
+    """Resolve a corpus into analysis inputs.
 
     Returns:
         (assessment_file, assessment_file_id, knowledge_files, mappings):
-        the latest converted ficha becomes the assessment source and every
-        completed anexo/adendo becomes an extra Knowledge file (retrieval).
+        the latest converted form becomes the assessment source and every
+        completed attachment/addendum becomes an extra Knowledge file (retrieval).
     """
-    informativo = database.get_informativo(informativo_id)  # 404 if missing
-    fichas = database.get_completed_documents_by_kinds(
-        informativo_id, [DocumentKind.FICHA.value]
+    corpus = database.get_corpus(corpus_id)  # 404 if missing
+    forms = database.get_completed_documents_by_kinds(
+        corpus_id, [DocumentKind.FORM.value]
     )
-    if not fichas:
+    if not forms:
         raise InvalidAnalysisInput(
-            f"Informativo '{informativo['nome']}' has no converted ficha (completed). "
-            "Upload the ficha PDF and wait for the conversion job to finish."
+            f"Corpus '{corpus['name']}' has no converted form (completed). "
+            "Upload the form PDF and wait for the conversion job to finish."
         )
-    ficha = fichas[-1]  # latest converted ficha
+    form = forms[-1]  # latest converted form
     extras = database.get_completed_documents_by_kinds(
-        informativo_id, [DocumentKind.ANEXO.value, DocumentKind.ADENDO.value]
+        corpus_id, [DocumentKind.ATTACHMENT.value, DocumentKind.ADDENDUM.value]
     )
     knowledge_files = [d["converted_file_path"] for d in extras]
     mappings = [(d["converted_file_id"], CONVERTED_EXTRA_FILE_TYPE) for d in extras]
-    return ficha["converted_file_path"], ficha["converted_file_id"], knowledge_files, mappings
+    return form["converted_file_path"], form["converted_file_id"], knowledge_files, mappings
 
 
 def ingest_report(
@@ -83,19 +83,19 @@ def ingest_report(
     if area:
         code = area_code_from_name(area)
         if code:
-            corpus_key = ficha_key(code)
-            informativo = database.get_informativo_by_slug(corpus_key)
-            if informativo:
-                corpus_id = informativo["id"]
+            corpus_key = area_key(code)
+            corpus = database.get_corpus_by_slug(corpus_key)
+            if corpus:
+                corpus_id = corpus["id"]
     if not corpus_id:
         raise InvalidAnalysisInput(
             f"Report area {area!r} could not be resolved to an ingested "
-            "informativo. Ingest the corresponding ficha first "
-            "(see POST /api/fichas/ingest) and retry."
+            "corpus. Ingest the corresponding form first "
+            "(see POST /api/areas/ingest) and retry."
         )
 
-    assessment_file, converted_ficha_id, knowledge_files, informativo_mappings = (
-        _resolve_informativo_inputs(corpus_id)
+    assessment_file, converted_form_id, knowledge_files, corpus_mappings = (
+        _resolve_corpus_inputs(corpus_id)
     )
 
     # 3. List charts.
@@ -163,9 +163,9 @@ def ingest_report(
 
             # Map every input so retry / report aggregation can rebuild it.
             mappings = [(png_file_id, FileType.PNG.value), (csv_file_id, FileType.CSV.value)]
-            if converted_ficha_id:
-                mappings.append((converted_ficha_id, FileType.ASSESSMENT.value))
-            mappings.extend(informativo_mappings)
+            if converted_form_id:
+                mappings.append((converted_form_id, FileType.ASSESSMENT.value))
+            mappings.extend(corpus_mappings)
             for file_id, file_type in mappings:
                 database.create_analysis_file_mapping(
                     analysis_id=analysis_id,

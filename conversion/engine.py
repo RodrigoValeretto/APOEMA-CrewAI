@@ -31,18 +31,18 @@ def convert_source_file(
     source_path,
     *,
     kind,
-    informativo,
-    quadrienio=None,
+    corpus,
+    quadrennium=None,
     do_ocr=False,
 ) -> dict:
     """Convert one source file into the enriched JSON schema.
 
     Args:
         source_path: path to the PDF or XLSX file
-        kind: ficha | anexo | adendo (``tipo_documento`` in the output)
-        informativo: informativo slug (e.g. ``ciencia_da_computacao``)
-        quadrienio: optional CAPES quadrennium label (e.g. "2025-2028")
-        do_ocr: run OCR on PDFs (default False — CAPES fichas have a text layer
+        kind: form | attachment | addendum (``document_type`` in the output)
+        corpus: corpus slug (e.g. ``ciencia_da_computacao``)
+        quadrennium: optional CAPES quadrennium label (e.g. "2025-2028")
+        do_ocr: run OCR on PDFs (default False — CAPES forms have a text layer
             and docling's default OCR model download is not always reachable)
 
     Returns:
@@ -52,17 +52,17 @@ def convert_source_file(
     ext = path.suffix.lower()
     sha = sha256_of(path)
     common = dict(
-        documento=path.name,
-        tipo_documento=kind,
-        informativo=informativo,
-        quadrienio=quadrienio,
+        document=path.name,
+        document_type=kind,
+        corpus=corpus,
+        quadrennium=quadrennium,
         sha256=sha,
     )
     if ext == ".pdf":
         return _convert_pdf(path, do_ocr=do_ocr, **common)
     if ext == ".xlsx":
         return serialize_xlsx(
-            path, ferramenta=f"openpyxl {_version('openpyxl')}", **common
+            path, tool=f"openpyxl {_version('openpyxl')}", **common
         )
     raise ValueError(f"Unsupported source extension for conversion: {ext!r}")
 
@@ -82,6 +82,6 @@ def _convert_pdf(path, *, do_ocr, **common) -> dict:
     export = result.document.export_to_dict()
     return serialize_pdf_docling(
         export,
-        ferramenta=f"docling {_version('docling')}",
+        tool=f"docling {_version('docling')}",
         **common,
     )

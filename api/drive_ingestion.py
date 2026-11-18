@@ -1,8 +1,8 @@
-"""Google Drive ficha ingestion.
+"""Google Drive form ingestion.
 
-Enumerates a public Drive folder, downloads every CAPES ficha/anexo PDF and
-registers it through the existing informativo+conversion pipeline. Idempotent:
-dedupes by ``drive_file_id`` so re-running (startup or ``POST /api/fichas/ingest``)
+Enumerates a public Drive folder, downloads every CAPES form/attachment PDF and
+registers it through the existing corpus+conversion pipeline. Idempotent:
+dedupes by ``drive_file_id`` so re-running (startup or ``POST /api/areas/ingest``)
 only downloads new files and re-enqueues documents still pending/failed.
 
 Drive specifics:
@@ -22,13 +22,13 @@ import requests
 
 from config import get_config
 from . import database
-from .constants import ConversionStatus, FileType
-from .fichas_catalog import (
+from .areas_catalog import (
+    area_key,
     area_name,
-    ficha_key,
-    parse_ficha_filename,
-    parse_quadrienio,
+    parse_area_filename,
+    parse_quadrennium,
 )
+from .constants import ConversionStatus, FileType
 
 logger = logging.getLogger(__name__)
 
@@ -79,16 +79,16 @@ def _save_downloaded_pdf(name: str, content: bytes) -> int:
     )
 
 
-def _get_or_create_informativo(slug: str, nome: str, quadrienio: Optional[str]) -> int:
-    """Return the informativo id for a slug, creating it on first sight."""
-    existing = database.get_informativo_by_slug(slug)
+def _get_or_create_corpus(slug: str, name: str, quadrennium: Optional[str]) -> int:
+    """Return the corpus id for a slug, creating it on first sight."""
+    existing = database.get_corpus_by_slug(slug)
     if existing:
         return existing["id"]
-    return database.create_informativo(nome=nome, slug=slug, quadrienio=quadrienio)
+    return database.create_corpus(name=name, slug=slug, quadrennium=quadrennium)
 
 
 def ingest_drive_folder(folder_id: str) -> Dict[str, int]:
-    """Enumerate + download + register every ficha/anexo in a Drive folder.
+    """Enumerate + download + register every form/attachment in a Drive folder.
 
     Returns stats: {total, downloaded, new_documents, reenqueued, skipped, errors}.
     """
@@ -108,14 +108,14 @@ def ingest_drive_folder(folder_id: str) -> Dict[str, int]:
         file_id = entry["file_id"]
         name = entry["name"]
         try:
-            parsed = parse_ficha_filename(name)
+            parsed = parse_area_filename(name)
             if parsed is None:
                 logger.warning(f"[Ingest] Ignoring unrecognized drive file: {name}")
                 stats["skipped"] += 1
                 continue
             area_code, kind = parsed
-            nome = area_name(area_code)
-            if nome is None:
+            name_value = area_name(area_code)
+            if name_value is None:
                 logger.warning(
                     f"[Ingest] Ignoring drive file with unknown area code '{area_code}': {name}"
                 )
@@ -124,7 +124,7 @@ def ingest_drive_folder(folder_id: str) -> Dict[str, int]:
 
             # Idempotence: a doc already ingested by drive_file_id is left alone
             # unless its conversion still needs a retry.
-            existing_doc = database.get_informativo_document_by_drive_file_id(file_id)
+            existing_doc = database.get_corpus_document_by_drive_file_id(file_id)
             if existing_doc:
                 # 'failed' -> re-enqueue to retry the conversion. 'pending' is
                 # already queued (its durable message survives worker restarts),
@@ -132,9 +132,9 @@ def ingest_drive_folder(folder_id: str) -> Dict[str, int]:
                 # messages and bloat the queue; 'processing'/'completed' are
                 # handled by the claim / already done.
                 if existing_doc["status"] == ConversionStatus.FAILED.value:
-                    from conversion_tasks import convert_informativo_document
+                    from conversion_tasks import convert_corpus_document
 
-                    convert_informativo_document.send(
+                    convert_corpus_document.send(
                         document_id=existing_doc["id"]
                     )
                     stats["reenqueued"] += 1
@@ -142,27 +142,27 @@ def ingest_drive_folder(folder_id: str) -> Dict[str, int]:
                     stats["skipped"] += 1
                 continue
 
-            slug = ficha_key(area_code)
-            informativo_id = _get_or_create_informativo(
+            slug = area_key(area_code)
+            corpus_id = _get_or_create_corpus(
                 slug=slug,
-                nome=nome,
-                quadrienio=parse_quadrienio(name),
+                name=name_value,
+                quadrennium=parse_quadrennium(name),
             )
 
             content = download_drive_file(file_id)
             original_file_id = _save_downloaded_pdf(name, content)
             stats["downloaded"] += 1
 
-            document_id = database.create_informativo_document(
-                informativo_id=informativo_id,
+            document_id = database.create_corpus_document(
+                corpus_id=corpus_id,
                 kind=kind,
                 original_file_id=original_file_id,
                 drive_file_id=file_id,
             )
 
-            from conversion_tasks import convert_informativo_document
+            from conversion_tasks import convert_corpus_document
 
-            convert_informativo_document.send(document_id=document_id)
+            convert_corpus_document.send(document_id=document_id)
             stats["new_documents"] += 1
         except Exception as e:  # per-file isolation: one bad file doesn't abort the run
             logger.exception(f"[Ingest] Failed to ingest drive file {name}: {e}")

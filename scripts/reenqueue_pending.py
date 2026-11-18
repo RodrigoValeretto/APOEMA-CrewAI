@@ -24,7 +24,7 @@ def main():
         knowledge_files = []
         for f in files:
             ft = f["file_type"]
-            if ft == "anexo":
+            if ft == "attachment":
                 knowledge_files.append(f["file_path"])
             elif ft not in paths:
                 paths[ft] = f["file_path"]

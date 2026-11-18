@@ -65,9 +65,9 @@ class Config:
         "xlsx": [".xlsx"],
     }
 
-    # Document conversion (informativo PDFs/XLSXs -> JSON)
+    # Document conversion (corpus PDFs/XLSXs -> JSON)
     CONVERTER_DIR = UPLOAD_DIR / "converted"
-    # Fichas/relatórios CAPES têm camada de texto; OCR (docling) só sob demanda
+    # CAPES forms/reports têm camada de texto; OCR (docling) só sob demanda
     CONVERTER_OCR = os.getenv("CONVERTER_OCR", "false").lower() == "true"
 
     # Google Drive ficha ingestion

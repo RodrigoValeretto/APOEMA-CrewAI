@@ -1,27 +1,27 @@
 """Serialize converted documents into the enriched APOEMA JSON schema.
 
-Two source shapes are normalized into one schema (``formato``:
+Two source shapes are normalized into one schema (``format``:
 ``apoema-json-converter-v1``):
 
-- **PDF fichas/relatórios** — via a Docling ``DoclingDocument`` export dict:
+- **PDF forms/reports** — via a Docling ``DoclingDocument`` export dict:
   blocks follow the document reading order (``body.children`` refs), keeping
   text paragraphs AND tables (with headers, structured rows and a markdown
   rendering for easy LLM consumption).
-- **XLSX anexos/adendos** — via openpyxl (docling's own XLSX codec drops sheet
-  names, which anexos need: ANEXO 3/4/5...). Each sheet becomes a
-  ``planilha`` block with its real name.
+- **XLSX attachments/addenda** — via openpyxl (docling's own XLSX codec drops
+  sheet names, which attachments need: ANEXO 3/4/5...). Each sheet becomes a
+  ``spreadsheet`` block with its real name.
 
 Block shapes::
 
-    {"id": 1, "tipo": "texto",    "pagina": 1, "texto": "..."}
-    {"id": 2, "tipo": "tabela",   "pagina": 3, "cabecalhos": ["A", "B"],
-     "linhas": [["1", "x"], ...], "markdown": "| A | B |..."}
-    {"id": 3, "tipo": "planilha", "aba": "ANEXO 3", "linhas": [...],
+    {"id": 1, "type": "text",      "page": 1, "text": "..."}
+    {"id": 2, "type": "table",     "page": 3, "headers": ["A", "B"],
+     "rows": [["1", "x"], ...], "markdown": "| A | B |..."}
+    {"id": 3, "type": "spreadsheet", "sheet": "ANEXO 3", "rows": [...],
      "markdown": "..."}
 """
 from datetime import date, datetime, time
 
-FORMATO = "apoema-json-converter-v1"
+FORMAT = "apoema-json-converter-v1"
 
 
 # --------------------------------------------------------------------------
@@ -62,14 +62,14 @@ def _markdown_cell(value) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ").strip()
 
 
-def render_markdown_table(linhas, cabecalhos=None) -> str:
+def render_markdown_table(rows, headers=None) -> str:
     """Render rows (list of lists) as a GitHub-style markdown table."""
-    rows = list(linhas)
+    rows = list(rows)
     if not rows:
         return ""
     width = max(len(r) for r in rows)
-    if cabecalhos:
-        header = [_markdown_cell(c) for c in cabecalhos]
+    if headers:
+        header = [_markdown_cell(c) for c in headers]
         header += [""] * (width - len(header))
         lines = ["| " + " | ".join(header) + " |"]
         lines.append("| " + " | ".join("---" for _ in range(width)) + " |")
@@ -90,62 +90,62 @@ def render_markdown_table(linhas, cabecalhos=None) -> str:
 def serialize_pdf_docling(
     docling_dict,
     *,
-    documento,
-    tipo_documento,
-    informativo,
-    quadrienio=None,
+    document,
+    document_type,
+    corpus,
+    quadrennium=None,
     sha256=None,
-    ferramenta="docling",
+    tool="docling",
 ) -> dict:
     """Convert a DoclingDocument export dict into the enriched schema."""
-    blocos = []
+    blocks = []
     for kind, idx in _body_order_items(docling_dict):
         if kind not in ("texts", "tables"):
             continue  # pictures/furniture: no text value for the pipeline
         item = docling_dict.get(kind, [])[idx]
-        pagina = _page_of(item)
+        page = _page_of(item)
         if kind == "texts":
-            texto = _clean(item.get("text"))
-            if not texto:
+            text = _clean(item.get("text"))
+            if not text:
                 continue
-            bloco = {"id": len(blocos) + 1, "tipo": "texto"}
-            if pagina:
-                bloco["pagina"] = pagina
-            bloco["texto"] = texto
-            blocos.append(bloco)
+            block = {"id": len(blocks) + 1, "type": "text"}
+            if page:
+                block["page"] = page
+            block["text"] = text
+            blocks.append(block)
             continue
 
         # table
         data = item.get("data", {}) or {}
         grid = data.get("grid") or []
         # Headers = leading rows flagged column_header by the table model
-        cabecalhos = []
-        linhas = []
+        headers = []
+        rows = []
         for row in grid:
             cells = [_cell_text(c) for c in row]
             if all(
                 isinstance(c, dict) and c.get("column_header") for c in row if c is not None
-            ) and not cabecalhos and len(row) > 0 and all(c is not None for c in row):
-                cabecalhos = cells
+            ) and not headers and len(row) > 0 and all(c is not None for c in row):
+                headers = cells
             else:
-                linhas.append(cells)
+                rows.append(cells)
         # drop spacer rows (empty everywhere)
-        linhas = [r for r in linhas if any(c for c in r)]
-        if not linhas and not cabecalhos:
+        rows = [r for r in rows if any(c for c in r)]
+        if not rows and not headers:
             continue
-        bloco = {"id": len(blocos) + 1, "tipo": "tabela"}
-        if pagina:
-            bloco["pagina"] = pagina
-        if cabecalhos:
-            bloco["cabecalhos"] = cabecalhos
-        bloco["linhas"] = linhas
-        bloco["markdown"] = render_markdown_table(linhas, cabecalhos or None)
-        blocos.append(bloco)
+        block = {"id": len(blocks) + 1, "type": "table"}
+        if page:
+            block["page"] = page
+        if headers:
+            block["headers"] = headers
+        block["rows"] = rows
+        block["markdown"] = render_markdown_table(rows, headers or None)
+        blocks.append(block)
 
-    origem = {"formato_arquivo": "pdf"}
+    source = {"file_format": "pdf"}
     if sha256:
-        origem["sha256"] = sha256
-    return _wrap(blocos, origem, documento, tipo_documento, informativo, quadrienio, ferramenta)
+        source["sha256"] = sha256
+    return _wrap(blocks, source, document, document_type, corpus, quadrennium, tool)
 
 
 # --------------------------------------------------------------------------
@@ -162,61 +162,61 @@ def _xlsx_value(value):
     return value
 
 
-def serialize_xlsx(path, *, documento, tipo_documento, informativo, quadrienio=None,
-                   sha256=None, ferramenta="openpyxl") -> dict:
-    """Convert an XLSX workbook into planilha blocks (one per sheet)."""
+def serialize_xlsx(path, *, document, document_type, corpus, quadrennium=None,
+                   sha256=None, tool="openpyxl") -> dict:
+    """Convert an XLSX workbook into spreadsheet blocks (one per sheet)."""
     from openpyxl import load_workbook
 
-    blocos = []
-    abas = []
+    blocks = []
+    sheets = []
     wb = load_workbook(path, read_only=True, data_only=True)
     try:
         for ws in wb.worksheets:
-            abas.append(ws.title)
-            linhas = []
+            sheets.append(ws.title)
+            rows = []
             for row in ws.iter_rows(values_only=True):
                 values = [_xlsx_value(v) for v in row]
                 # trim trailing empty cells, drop fully-empty rows
                 while values and values[-1] in ("", None):
                     values.pop()
                 if any(v not in ("", None) for v in values):
-                    linhas.append(["" if v is None else v for v in values])
-            if not linhas:
+                    rows.append(["" if v is None else v for v in values])
+            if not rows:
                 continue
-            blocos.append(
+            blocks.append(
                 {
-                    "id": len(blocos) + 1,
-                    "tipo": "planilha",
-                    "aba": ws.title,
-                    "linhas": linhas,
-                    "markdown": render_markdown_table(linhas),
+                    "id": len(blocks) + 1,
+                    "type": "spreadsheet",
+                    "sheet": ws.title,
+                    "rows": rows,
+                    "markdown": render_markdown_table(rows),
                 }
             )
     finally:
         wb.close()
 
-    origem = {"formato_arquivo": "xlsx", "abas": abas}
+    source = {"file_format": "xlsx", "sheets": sheets}
     if sha256:
-        origem["sha256"] = sha256
-    return _wrap(blocos, origem, documento, tipo_documento, informativo, quadrienio, ferramenta)
+        source["sha256"] = sha256
+    return _wrap(blocks, source, document, document_type, corpus, quadrennium, tool)
 
 
 # --------------------------------------------------------------------------
 # envelope
 # --------------------------------------------------------------------------
-def _wrap(blocos, origem, documento, tipo_documento, informativo, quadrienio, ferramenta) -> dict:
+def _wrap(blocks, source, document, document_type, corpus, quadrennium, tool) -> dict:
     from datetime import datetime, timezone
 
     return {
-        "formato": FORMATO,
-        "tipo_documento": tipo_documento,
-        "documento": documento,
-        "informativo": informativo,
-        "quadrienio": quadrienio,
-        "origem": origem,
-        "conversao": {
-            "ferramenta": ferramenta,
-            "realizada_em": datetime.now(timezone.utc).isoformat(),
+        "format": FORMAT,
+        "document_type": document_type,
+        "document": document,
+        "corpus": corpus,
+        "quadrennium": quadrennium,
+        "source": source,
+        "conversion": {
+            "tool": tool,
+            "converted_at": datetime.now(timezone.utc).isoformat(),
         },
-        "blocos": blocos,
+        "blocks": blocks,
     }

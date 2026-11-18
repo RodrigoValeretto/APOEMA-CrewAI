@@ -1,4 +1,4 @@
-"""Dramatiq actors for informativo document -> JSON conversion.
+"""Dramatiq actors for corpus document -> JSON conversion.
 
 Runs on the dedicated ``conversion`` queue (see the ``converter_worker``
 service in docker-compose) so long-running docling jobs never block the
@@ -15,9 +15,10 @@ from dramatiq_broker import broker  # noqa: F401
 
 from api import database
 from api.constants import (
-    CONVERTED_FICHA_FILE_TYPE,
+    CONVERTED_FORM_FILE_TYPE,
     CONVERTED_EXTRA_FILE_TYPE,
     ConversionStatus,
+    DocumentKind,
 )
 from config import get_config
 
@@ -35,28 +36,28 @@ logger = logging.getLogger(__name__)
     min_backoff=10_000,
     max_backoff=60_000,
 )
-def convert_informativo_document(document_id: int) -> dict:
-    """Convert one informativo document (ficha/anexo/adendo) to JSON.
+def convert_corpus_document(document_id: int) -> dict:
+    """Convert one corpus document (form/attachment/addendum) to JSON.
 
     Flow: pending -> processing -> completed (converted_file_id set) | failed.
     Re-running a completed/failed job is a no-op (idempotent).
     """
     try:
         # Atomic claim: only one worker converts a given document.
-        if not database.claim_informativo_document(document_id):
-            doc = database.get_informativo_document(document_id)
+        if not database.claim_corpus_document(document_id):
+            doc = database.get_corpus_document(document_id)
             logger.info(f"[Doc {document_id}] Not claimed (status={doc['status']})")
             return {"document_id": document_id, "status": doc["status"]}
 
-        doc = database.get_informativo_document(document_id)
-        informativo = database.get_informativo(doc["informativo_id"])
+        doc = database.get_corpus_document(document_id)
+        corpus = database.get_corpus(doc["corpus_id"])
         source_path = doc.get("original_file_path")
         if not source_path or not os.path.exists(source_path):
             raise FileNotFoundError(f"Source file missing: {source_path}")
 
         logger.info(
             f"[Doc {document_id}] Converting {doc['kind']} "
-            f"{os.path.basename(source_path)} (informativo {informativo['slug']})..."
+            f"{os.path.basename(source_path)} (corpus {corpus['slug']})..."
         )
         from conversion.engine import convert_source_file  # lazy: torch
 
@@ -64,8 +65,8 @@ def convert_informativo_document(document_id: int) -> dict:
         output = convert_source_file(
             source_path,
             kind=doc["kind"],
-            informativo=informativo["slug"],
-            quadrienio=informativo.get("quadrienio"),
+            corpus=corpus["slug"],
+            quadrennium=corpus.get("quadrennium"),
             do_ocr=config.CONVERTER_OCR,
         )
 
@@ -74,8 +75,8 @@ def convert_informativo_document(document_id: int) -> dict:
             json.dump(output, f, ensure_ascii=False, indent=2)
 
         file_type = (
-            CONVERTED_FICHA_FILE_TYPE
-            if doc["kind"] == "ficha"
+            CONVERTED_FORM_FILE_TYPE
+            if doc["kind"] == DocumentKind.FORM.value
             else CONVERTED_EXTRA_FILE_TYPE
         )
         converted_file_id = database.create_analysis_file(
@@ -84,7 +85,7 @@ def convert_informativo_document(document_id: int) -> dict:
             file_path=str(out_path),
             file_size=out_path.stat().st_size,
         )
-        database.update_informativo_document_status(
+        database.update_corpus_document_status(
             document_id,
             ConversionStatus.COMPLETED.value,
             converted_file_id=converted_file_id,
@@ -100,7 +101,7 @@ def convert_informativo_document(document_id: int) -> dict:
         logger.error(f"[Doc {document_id}] Conversion failed: {e}")
         logger.exception(e)
         try:
-            database.update_informativo_document_status(
+            database.update_corpus_document_status(
                 document_id,
                 ConversionStatus.FAILED.value,
                 error=str(e)[:2000],
