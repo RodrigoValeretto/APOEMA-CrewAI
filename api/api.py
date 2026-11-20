@@ -57,6 +57,10 @@ from .models import (
     ReportBatchIngestRequest,
     ReportBatchIngestResponse,
     ReportBatchIngestItem,
+    ReportReprocessRequest,
+    ReportStatusItem,
+    ReportBatchStatusRequest,
+    ReportBatchStatusResponse,
 )
 from .constants import (
     AnalysisType,
@@ -940,6 +944,92 @@ async def ingest_reports_batch_endpoint(request: ReportBatchIngestRequest):
             total=len(request.reports_list),
             items=items,
         )
+
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/reports/{report_id}/reprocess",
+    response_model=ReportIngestResponse,
+    tags=["Analysis"],
+)
+async def reprocess_report_endpoint(report_id: str, request: ReportReprocessRequest):
+    """Delete a report's analyses and re-ingest it from scratch.
+
+    Drops every analysis under ``report_reference`` = report id (and their
+    checkpoints + per-chart PNG/CSV assets), then re-runs the normal ingest:
+    fetch charts, download PNG/CSV, create one ``png_csv`` analysis per chart.
+    The corpus assessment/attachments are shared and left untouched.
+    """
+    try:
+        if not report_ingestion.validate_report_id(report_id):
+            raise InvalidAnalysisInput(
+                f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
+            )
+        response = await asyncio.to_thread(
+            report_service.reprocess_report,
+            report_id,
+            request.model,
+            request.important_programs,
+        )
+        return response
+
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/reports/status",
+    response_model=ReportBatchStatusResponse,
+    tags=["Analysis"],
+)
+async def reports_status_endpoint(request: ReportBatchStatusRequest):
+    """Return the completion status of a list of reports.
+
+    For each report id, counts its analyses by status and reports the
+    completion percentage. ``needs_reprocess`` is True when the report has at
+    least one ``failed`` analysis (the caller can then hit the reprocess
+    endpoint). A report id with no analyses at all is reported as
+    ``total: 0`` / ``completion_pct: 0``.
+    """
+    try:
+        items = []
+        for report_id in request.reports_list:
+            if not report_ingestion.validate_report_id(report_id):
+                raise InvalidAnalysisInput(
+                    f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
+                )
+            counts = database.get_report_status_counts(report_id)
+            total = sum(counts.values())
+            completed = counts.get(AnalysisStatus.COMPLETED.value, 0)
+            failed = counts.get(AnalysisStatus.FAILED.value, 0)
+            pending = counts.get(AnalysisStatus.PENDING.value, 0)
+            processing = counts.get(AnalysisStatus.PROCESSING.value, 0)
+            completion_pct = round((completed / total) * 100, 2) if total else 0.0
+            items.append(
+                ReportStatusItem(
+                    report_id=report_id,
+                    total=total,
+                    completed=completed,
+                    failed=failed,
+                    pending=pending,
+                    processing=processing,
+                    completion_pct=completion_pct,
+                    needs_reprocess=failed > 0,
+                )
+            )
+        return ReportBatchStatusResponse(items=items)
 
     except ApoemaException:
         raise

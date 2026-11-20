@@ -509,6 +509,58 @@ class ReportBatchIngestResponse(BaseModel):
     items: List[ReportBatchIngestItem] = Field(default_factory=list)
 
 
+class ReportReprocessRequest(BaseModel):
+    """Request to reprocess an already-ingested report (report id in the path)."""
+
+    model: str = Field(
+        default=ModelType.OLLAMA.value,
+        description="LLM model to use for the chart analyses",
+        pattern="^(gemini|ollama)$",
+    )
+    important_programs: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Program identifiers (Sigla values) marked as important; passed to "
+            "every chart analysis"
+        ),
+        examples=[["UFBA-A-5-Z"]],
+    )
+
+
+class ReportStatusItem(BaseModel):
+    """Completion status of one report."""
+
+    report_id: str = Field(..., description="Report id")
+    total: int = Field(..., description="Analyses created for this report")
+    completed: int = Field(..., description="Analyses in 'completed'")
+    failed: int = Field(..., description="Analyses in 'failed'")
+    pending: int = Field(..., description="Analyses in 'pending'")
+    processing: int = Field(..., description="Analyses in 'processing'")
+    completion_pct: float = Field(
+        ..., description="Percentage of analyses completed (0-100)"
+    )
+    needs_reprocess: bool = Field(
+        ...,
+        description="True when the report has at least one failed analysis",
+    )
+
+
+class ReportBatchStatusRequest(BaseModel):
+    """Request the status of a list of APOEMA reports."""
+
+    reports_list: List[str] = Field(
+        ...,
+        description="APOEMA report ids (md5 in .../apoema-pg/view/<id>) to check",
+        examples=[["b4c319228b363dc55611ca3e78cb1f8a", "7d8e..."]],
+    )
+
+
+class ReportBatchStatusResponse(BaseModel):
+    """Per-report completion status for a list of reports."""
+
+    items: List[ReportStatusItem] = Field(default_factory=list)
+
+
 class FileUploadResponse(BaseModel):
     """Response model for file upload"""
 
