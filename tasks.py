@@ -35,7 +35,9 @@ from db_manager import (
     count_processing_analyses,
     count_older_pending_analyses,
     claim_analysis_processing_slot,
+    get_analysis,
 )
+from api.exceptions import AnalysisNotFound
 
 
 def _requeue_through_gate(
@@ -250,6 +252,24 @@ def run_analysis_flow_with_tracking(
     """
     try:
         logger.info(f"[Analysis {analysis_id}] Starting APOEMA Flow analysis with model={model}")
+
+        # Guard against a deleted row: reprocessing a report deletes its
+        # analyses while their queue messages are still in flight. Requeueing a
+        # message whose analysis no longer exists would loop forever (the claim
+        # below finds no row and _requeue_through_gate re-enqueues it), so drop
+        # the message instead of running a flow whose results have nowhere to
+        # go (and whose slot no longer exists to block the gate).
+        try:
+            get_analysis(analysis_id)
+        except AnalysisNotFound:
+            logger.info(
+                f"[Analysis {analysis_id}] Row deleted (reprocess?); dropping message"
+            )
+            return {
+                "analysis_id": analysis_id,
+                "status": "dropped",
+                "message": "Analysis row no longer exists; message dropped",
+            }
 
         # Atomically claim the single-processing slot. Actor-level retries
         # bypass the enqueue actor's FIFO check, so the claim here (advisory
