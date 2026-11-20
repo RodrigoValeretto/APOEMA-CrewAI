@@ -57,6 +57,8 @@ from .models import (
     ReportBatchIngestRequest,
     ReportBatchIngestResponse,
     ReportBatchIngestItem,
+    ReportBatchReprocessRequest,
+    ReportBatchReprocessResponse,
     ReportReprocessRequest,
     ReportStatusItem,
     ReportBatchStatusRequest,
@@ -101,6 +103,7 @@ from zombie_kill import (
 from tasks import (
     enqueue_analysis_for_sequential_processing,
     ingest_report_batch,
+    reprocess_report_batch,
 )
 from conversion_tasks import convert_corpus_document
 from . import drive_ingestion
@@ -941,6 +944,56 @@ async def ingest_reports_batch_endpoint(request: ReportBatchIngestRequest):
             for rid in request.reports_list
         ]
         return ReportBatchIngestResponse(
+            total=len(request.reports_list),
+            items=items,
+        )
+
+    except ApoemaException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/reports/reprocess-batch",
+    response_model=ReportBatchReprocessResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["Analysis"],
+)
+async def reprocess_reports_batch_endpoint(request: ReportBatchReprocessRequest):
+    """Enqueue a list of APOEMA reports to be reprocessed one at a time.
+
+    The batch is processed asynchronously by a Dramatiq actor
+    (``reprocess_report_batch``): each report id in ``reports_list`` is deleted
+    (analyses + checkpoints + per-chart assets) and re-ingested in list order.
+    A report that fails to reprocess is recorded and skipped without aborting
+    the rest.
+
+    Returns 202 immediately with the list of report ids accepted; track the
+    per-report outcome through the worker log (``[Reports] ...``) and the
+    ``POST /api/reports/status`` endpoint.
+    """
+    try:
+        for report_id in request.reports_list:
+            if not report_ingestion.validate_report_id(report_id):
+                raise InvalidAnalysisInput(
+                    f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
+                )
+
+        reprocess_report_batch.send(
+            reports=request.reports_list,
+            model=request.model,
+            important_programs=request.important_programs,
+        )
+
+        items = [
+            ReportBatchIngestItem(report_id=rid, status="queued")
+            for rid in request.reports_list
+        ]
+        return ReportBatchReprocessResponse(
             total=len(request.reports_list),
             items=items,
         )

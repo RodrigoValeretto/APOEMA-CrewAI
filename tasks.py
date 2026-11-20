@@ -514,3 +514,47 @@ def ingest_report_batch(
             results[report_id] = {"status": "error", "message": str(e)[:500]}
 
     return {"results": results}
+
+
+@dramatiq.actor(
+    max_retries=1,
+    time_limit=7_200_000,  # 120 minutes: many reports, each with dozens of charts
+    min_backoff=10_000,
+    max_backoff=60_000,
+    priority=5,  # queue-management priority, above the analysis run actors
+)
+def reprocess_report_batch(
+    reports: list,
+    model: str = "ollama",
+    important_programs: list = None,
+) -> dict:
+    """Reprocess a list of APOEMA reports, one at a time.
+
+    Each report is deleted and re-ingested by
+    ``report_service.reprocess_report`` (which drops the report's analyses +
+    checkpoints + per-chart assets, then re-runs the ingest). The reports are
+    processed serially in list order; a report that fails is recorded and
+    skipped without aborting the rest.
+    """
+    from api.report_service import reprocess_report
+
+    results = {}
+    for report_id in reports:
+        try:
+            logger.info(f"[Reports] Reprocessing report {report_id} ...")
+            resp = reprocess_report(report_id, model, important_programs)
+            results[report_id] = {
+                "status": "ok",
+                "created": resp.created,
+                "skipped": resp.skipped,
+                "failed": resp.failed,
+            }
+            logger.info(
+                f"[Reports] {report_id} reprocessed: created={resp.created} "
+                f"skipped={resp.skipped} failed={resp.failed}"
+            )
+        except Exception as e:
+            logger.error(f"[Reports] {report_id} reprocess failed: {e}")
+            results[report_id] = {"status": "error", "message": str(e)[:500]}
+
+    return {"results": results}
