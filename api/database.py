@@ -1118,3 +1118,50 @@ def get_area_rows() -> List[Dict[str, Any]]:
                 return [dict(r) for r in cur.fetchall()]
     except psycopg.Error as e:
         raise DatabaseError(f"Failed to get area rows: {str(e)}")
+
+
+def get_report_status_counts(report_reference: str) -> Dict[str, int]:
+    """Count a report's analyses grouped by status.
+
+    Returns a ``{status: count}`` dict (empty when the report has no analyses).
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT status, COUNT(*) AS count
+                    FROM analysis
+                    WHERE report_reference = %s
+                    GROUP BY status
+                    """,
+                    (report_reference,),
+                )
+                return {r["status"]: r["count"] for r in cur.fetchall()}
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to get report status counts: {str(e)}")
+
+
+def delete_analyses_by_report(report_reference: str) -> List[int]:
+    """Delete every analysis of a report (cascade clears results + mappings).
+
+    Returns the deleted analysis ids so the caller can clean up the per-chart
+    files and run checkpoints. ``analysis_files`` rows are NOT touched here —
+    the caller deletes the PNG/CSV assets explicitly after the cascade.
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM analysis WHERE report_reference = %s",
+                    (report_reference,),
+                )
+                ids = [r[0] for r in cur.fetchall()]
+                cur.execute(
+                    "DELETE FROM analysis WHERE report_reference = %s",
+                    (report_reference,),
+                )
+                conn.commit()
+                return ids
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to delete analyses by report: {str(e)}")

@@ -24,6 +24,7 @@ from .constants import (
 from .exceptions import InvalidAnalysisInput
 from .areas_catalog import area_code_from_name, area_key
 from .models import ReportIngestItem, ReportIngestResponse
+from retry_utils import checkpoint_path
 
 logger = logging.getLogger(__name__)
 
@@ -220,3 +221,67 @@ def ingest_report(
         failed=failed,
         charts=items,
     )
+
+
+def reprocess_report(
+    report_id: str,
+    model: str,
+    important_programs: Optional[List[str]] = None,
+) -> ReportIngestResponse:
+    """Delete a report's existing analyses and re-ingest it from scratch.
+
+    Removes every analysis under ``report_reference`` = report id (cascade
+    clears their results and file mappings), deletes the per-chart PNG/CSV
+    assets and the run checkpoints, then re-runs the normal ingest. The
+    assessment/attachment files belong to the corpus and are shared across
+    analyses, so they are left untouched.
+
+    Returns the same ``ReportIngestResponse`` as ``ingest_report``.
+    """
+    if not report_ingestion.validate_report_id(report_id):
+        raise InvalidAnalysisInput(
+            f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
+        )
+
+    # 1. Collect the report's per-chart files BEFORE deleting the analyses
+    #    (the mappings are the only link to them and die with the cascade).
+    analyses = database.get_analyses_by_report(report_id)
+    chart_file_ids = []
+    for a in analyses:
+        for f in database.get_analysis_files(a["id"]):
+            if f["file_type"] in (FileType.PNG.value, FileType.CSV.value):
+                chart_file_ids.append(f["id"])
+
+    # 2. Delete the analyses (cascade removes results + mappings).
+    deleted_ids = database.delete_analyses_by_report(report_id)
+    logger.info(
+        "[Reports] %s reprocess: deleted %d analyses", report_id, len(deleted_ids)
+    )
+
+    # 3. Drop the run checkpoints for the deleted analyses (fresh start).
+    for analysis_id in deleted_ids:
+        cp = checkpoint_path(f"analysis_{analysis_id}")
+        if cp.exists():
+            try:
+                cp.unlink()
+            except OSError:
+                logger.warning(
+                    "[Reports] %s reprocess: failed to remove checkpoint %s",
+                    report_id,
+                    cp,
+                )
+
+    # 4. Delete the per-chart PNG/CSV files (disk + tracking rows).
+    for file_id in chart_file_ids:
+        try:
+            file_manager.delete_file(file_id)
+        except Exception as e:  # per-file isolation
+            logger.warning(
+                "[Reports] %s reprocess: failed to delete file %s: %s",
+                report_id,
+                file_id,
+                e,
+            )
+
+    # 5. Re-ingest from scratch.
+    return ingest_report(report_id, model, important_programs)
