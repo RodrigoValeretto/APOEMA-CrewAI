@@ -1,4 +1,4 @@
-.PHONY: install run help clean serve docker docker-up docker-down docker-logs docker-logs-app docker-logs-worker docker-logs-db
+.PHONY: install run help clean serve docker docker-up docker-up-gpu docker-down docker-logs docker-logs-app docker-logs-worker docker-logs-db
 
 # Default target
 help:
@@ -15,6 +15,8 @@ help:
 	@echo "  make run prefix=<string>                       Specify custom prefix for output files"
 	@echo "  make serve                                     Run the API server"
 	@echo "  make docker                                    Start Docker environment (postgres, rabbitmq, worker, etc.)"
+	@echo "  make docker-up                                 Start Docker environment (detached)"
+	@echo "  make docker-up-gpu                             Start Docker with NVIDIA GPU (needs nvidia-container-toolkit)"
 	@echo "  make help                                      Show this help message"
 	@echo "  make clean                                     Clean generated output and cache"
 	@echo ""
@@ -70,6 +72,16 @@ docker:
 docker-up:
 	@echo "Starting Docker environment (detached)..."
 	docker compose up -d --build
+
+# GPU variant: requires nvidia-container-toolkit + an NVIDIA GPU. Falls back
+# to CPU-only if the override is not present.
+docker-up-gpu:
+	@echo "Starting Docker environment with NVIDIA GPU (detached)..."
+	docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+
+docker-gpu:
+	@echo "Starting Docker environment with NVIDIA GPU..."
+	docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 
 docker-down:
 	@echo "Stopping Docker environment..."

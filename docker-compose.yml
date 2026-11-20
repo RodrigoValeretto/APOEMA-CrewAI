@@ -70,7 +70,6 @@ services:
       - ./ollama-entrypoint.sh:/ollama-entrypoint.sh:ro
     environment:
       OLLAMA_NUM_PARALLEL: 1
-      OLLAMA_NUM_GPU: 1
       # CrewAI's openai-compatible client does NOT send options.num_ctx, so the
       # ollama server default (4096) truncated the assessment JSON prompts
       # (~13K tokens) -> runaway generation -> httpx.ReadTimeout (2026-09-09).

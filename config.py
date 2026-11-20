@@ -84,9 +84,9 @@ class Config:
         "OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://localhost:11434")
     )
     # Ollama chat model used by the "ollama" profile (must support tool calling).
-    # phi4-mini:3.8b fits comfortably in Docker Desktop's default ~7.65 GiB memory
-    # limit and is strong at structured output (no thinking-mode overhead like qwen3).
-    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "phi4-mini:3.8b")
+    # qwen2.5:3b (1.9GB) is the CPU-safe default; on GPU machines set
+    # OLLAMA_MODEL=qwen2.5:7b (4.7GB) in .env (fits an RTX 4060 8GB).
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
     # Vision model used by the plot analyst (task 7 reads a PNG chart).
     OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "qwen2.5vl:3b")
     DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "ollama")
