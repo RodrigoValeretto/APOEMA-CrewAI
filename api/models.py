@@ -509,6 +509,36 @@ class ReportBatchIngestResponse(BaseModel):
     items: List[ReportBatchIngestItem] = Field(default_factory=list)
 
 
+class ReportBatchReprocessRequest(BaseModel):
+    """Request to reprocess a list of reports (delete + re-ingest each)."""
+
+    reports_list: List[str] = Field(
+        ...,
+        description="APOEMA report ids (md5 in .../apoema-pg/view/<id>) to reprocess, in order",
+        examples=[["b4c319228b363dc55611ca3e78cb1f8a", "7d8e..."]],
+    )
+    model: str = Field(
+        default=ModelType.OLLAMA.value,
+        description="LLM model to use for the chart analyses",
+        pattern="^(gemini|ollama)$",
+    )
+    important_programs: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Program identifiers (Sigla values) marked as important; passed to "
+            "every chart analysis of every report"
+        ),
+        examples=[["UFBA-A-5-Z"]],
+    )
+
+
+class ReportBatchReprocessResponse(BaseModel):
+    """Result of enqueuing a list of reports for reprocessing."""
+
+    total: int = Field(..., description="Number of reports enqueued")
+    items: List[ReportBatchIngestItem] = Field(default_factory=list)
+
+
 class ReportReprocessRequest(BaseModel):
     """Request to reprocess an already-ingested report (report id in the path)."""
 

@@ -250,3 +250,50 @@ class TestStatusEndpoint:
         assert second["total"] == 5
         assert second["completion_pct"] == 0.0
         assert second["needs_reprocess"] is False
+
+
+class TestReprocessBatchEndpoint:
+    def test_reprocess_batch_route(self, monkeypatch):
+        sent = {}
+
+        def _fake_send(**kwargs):
+            sent.update(kwargs)
+
+        monkeypatch.setattr(
+            api_module.report_ingestion, "validate_report_id", lambda rid: True
+        )
+        monkeypatch.setattr(
+            api_module.reprocess_report_batch, "send", _fake_send
+        )
+
+        client = TestClient(api_module.app)
+        resp = client.post(
+            "/api/reports/reprocess-batch",
+            json={
+                "reports_list": [
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                ],
+                "model": "ollama",
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        body = resp.json()
+        assert body["total"] == 2
+        assert [i["status"] for i in body["items"]] == ["queued", "queued"]
+        assert sent["reports"] == [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        ]
+        assert sent["model"] == "ollama"
+
+    def test_reprocess_batch_rejects_bad_id(self, monkeypatch):
+        monkeypatch.setattr(
+            api_module.report_ingestion, "validate_report_id", lambda rid: False
+        )
+        client = TestClient(api_module.app)
+        resp = client.post(
+            "/api/reports/reprocess-batch",
+            json={"reports_list": ["not-a-hex-token"], "model": "ollama"},
+        )
+        assert resp.status_code == 400, resp.text
