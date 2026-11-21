@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 from config import get_config
 from .exceptions import (
     DatabaseError,
@@ -17,19 +18,35 @@ from .constants import AnalysisStatus
 
 config = get_config()
 
+# Lazy singleton connection pool. Every query used to open/close a fresh
+# psycopg connection; under the FIFO backoff loop that churned ~27k TIME_WAIT
+# sockets and exhausted the ephemeral-port range (intermittent "Cannot assign
+# requested address"). Reusing pooled connections eliminates that churn.
+_pool: Optional[ConnectionPool] = None
+
 
 def get_connection():
-    """Get a database connection"""
-    try:
-        return psycopg.connect(
-            host=config.DB_HOST,
-            port=config.DB_PORT,
-            user=config.DB_USER,
-            password=config.DB_PASSWORD,
-            dbname=config.DB_NAME,
+    """Get a database connection from the pool (context-manager friendly).
+
+    Returns a pooled connection; ``with get_connection() as conn:`` commits on
+    clean exit (and rolls back on exception), then returns the connection to
+    the pool instead of closing the underlying socket.
+    """
+    global _pool
+    if _pool is None:
+        _pool = ConnectionPool(
+            kwargs={
+                "host": config.DB_HOST,
+                "port": config.DB_PORT,
+                "user": config.DB_USER,
+                "password": config.DB_PASSWORD,
+                "dbname": config.DB_NAME,
+            },
+            min_size=config.DB_POOL_MIN_SIZE,
+            max_size=config.DB_POOL_MAX_SIZE,
+            open=True,
         )
-    except psycopg.Error as e:
-        raise DatabaseError(f"Failed to connect to database: {str(e)}")
+    return _pool.connection()
 
 
 def create_analysis(
