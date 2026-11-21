@@ -1048,8 +1048,9 @@ async def reprocess_reports_batch_endpoint(request: ReportBatchReprocessRequest)
     The batch is processed asynchronously by a Dramatiq actor
     (``reprocess_report_batch``): each report id in ``reports_list`` is deleted
     (analyses + checkpoints + per-chart assets) and re-ingested in list order.
-    A report that fails to reprocess is recorded and skipped without aborting
-    the rest.
+    With ``partial=true``, only each report's FAILED analyses are re-enqueued
+    (completed/pending/processing stay intact). A report that fails to
+    reprocess is recorded and skipped without aborting the rest.
 
     Returns 202 immediately with the list of report ids accepted; track the
     per-report outcome through the worker log (``[Reports] ...``) and the
@@ -1066,6 +1067,7 @@ async def reprocess_reports_batch_endpoint(request: ReportBatchReprocessRequest)
             reports=request.reports_list,
             model=request.model,
             important_programs=request.important_programs,
+            partial=request.partial,
         )
 
         items = [
@@ -1088,22 +1090,31 @@ async def reprocess_reports_batch_endpoint(request: ReportBatchReprocessRequest)
 
 @app.post(
     "/api/reports/{report_id}/reprocess",
-    response_model=ReportIngestResponse,
     tags=["Analysis"],
 )
 async def reprocess_report_endpoint(report_id: str, request: ReportReprocessRequest):
-    """Delete a report's analyses and re-ingest it from scratch.
+    """Delete a report's analyses and re-ingest it from scratch, or re-run only failed ones.
 
-    Drops every analysis under ``report_reference`` = report id (and their
-    checkpoints + per-chart PNG/CSV assets), then re-runs the normal ingest:
-    fetch charts, download PNG/CSV, create one ``png_csv`` analysis per chart.
-    The corpus assessment/attachments are shared and left untouched.
+    ``partial=false`` (default): drop every analysis under ``report_reference``
+    = report id (and their checkpoints + per-chart PNG/CSV assets), then re-run
+    the normal ingest.
+
+    ``partial=true``: leave completed/pending/processing analyses untouched and
+    re-enqueue only the ``failed`` ones through the gate (returns a
+    ``ReportPartialReprocessResponse``).
     """
     try:
         if not report_ingestion.validate_report_id(report_id):
             raise InvalidAnalysisInput(
                 f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
             )
+        if request.partial:
+            response = await asyncio.to_thread(
+                report_service.reprocess_report_partial,
+                report_id,
+                request.model,
+            )
+            return response
         response = await asyncio.to_thread(
             report_service.reprocess_report,
             report_id,
