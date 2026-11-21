@@ -1,8 +1,9 @@
 """Tests for the partial reprocess feature.
 
-``partial=true`` re-enqueues only a report's FAILED analyses (keeping
-completed/pending/processing intact), instead of the full delete + re-ingest.
-Covers the service function, the endpoint routing, and the batch actor branch.
+``partial=true`` deletes only a report's NON-completed analyses (keeping
+``completed``) and re-runs the idempotent ingest, so only the deleted charts
+are recreated as ``pending``. ``partial=false`` deletes everything and
+re-ingests. Both return a ``ReportIngestResponse``.
 """
 from fastapi.testclient import TestClient
 
@@ -11,34 +12,111 @@ from api import api as api_module
 REPORT_ID = "b4c319228b363dc55611ca3e78cb1f8a"
 
 
-def _failed_analyses():
-    return [
-        {"id": 11, "status": "failed", "model": "ollama", "important_programs": None},
-        {"id": 12, "status": "failed", "model": None, "important_programs": None},
-        {"id": 13, "status": "completed", "model": "ollama", "important_programs": None},
-        {"id": 14, "status": "pending", "model": "ollama", "important_programs": None},
-    ]
+class TestDeleteAnalysesByReportKeepStatuses:
+    def test_keep_statuses_adds_not_in_clause(self, monkeypatch):
+        from api import database
+
+        captured = {}
+
+        class _Cursor:
+            def __init__(self, row_factory=None):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def execute(self, sql, params):
+                captured.setdefault("sql", []).append((sql, params))
+
+            def fetchall(self):
+                return [[11], [12]]
+
+        class _Conn:
+            def cursor(self, row_factory=None):
+                return _Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def commit(self):
+                pass
+
+        monkeypatch.setattr(database, "get_connection", lambda: _Conn())
+
+        result = database.delete_analyses_by_report(
+            "rel-x", keep_statuses=["completed"]
+        )
+        assert result == [11, 12]
+        select_sql, select_params = captured["sql"][0]
+        assert "status NOT IN" in select_sql
+        assert select_params == ["rel-x", "completed"]
+
+    def test_no_keep_statuses_deletes_all(self, monkeypatch):
+        from api import database
+
+        captured = {}
+
+        class _Cursor:
+            def __init__(self, row_factory=None):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def execute(self, sql, params):
+                captured.setdefault("sql", []).append((sql, params))
+
+            def fetchall(self):
+                return []
+
+        class _Conn:
+            def cursor(self, row_factory=None):
+                return _Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def commit(self):
+                pass
+
+        monkeypatch.setattr(database, "get_connection", lambda: _Conn())
+
+        database.delete_analyses_by_report("rel-x")
+        select_sql, select_params = captured["sql"][0]
+        assert "status NOT IN" not in select_sql
+        assert select_params == ["rel-x"]
 
 
 class TestPartialReprocessService:
-    def test_requeues_only_failed(self, monkeypatch):
+    def _analyses(self):
+        return [
+            {"id": 11, "status": "failed"},
+            {"id": 12, "status": "pending"},
+            {"id": 13, "status": "processing"},
+            {"id": 14, "status": "completed"},
+        ]
+
+    def test_partial_keeps_completed_deletes_rest(self, monkeypatch):
         from api import report_service
 
-        sent = []
+        delete_args = {}
+        ingest_args = {}
 
-        class _Sender:
-            @staticmethod
-            def send(**kwargs):
-                sent.append(kwargs)
-
-        def _rebuild(aid):
-            return {
-                "assessment_file": f"/app/a{aid}.json",
-                "pdf_file": "",
-                "png_file": f"/app/p{aid}.png",
-                "csv_file": f"/app/c{aid}.csv",
-                "knowledge_files": [],
-            }
+        class _FakePath:
+            def exists(self):
+                return False
 
         monkeypatch.setattr(
             report_service.report_ingestion, "validate_report_id", lambda rid: True
@@ -46,67 +124,85 @@ class TestPartialReprocessService:
         monkeypatch.setattr(
             report_service.database,
             "get_analyses_by_report",
-            lambda ref: _failed_analyses(),
+            lambda ref: self._analyses(),
         )
         monkeypatch.setattr(
-            "tasks.enqueue_analysis_for_sequential_processing", _Sender()
+            report_service.database,
+            "get_analysis_files",
+            lambda aid: [],
+        )
+
+        def _fake_delete(ref, keep_statuses=None):
+            delete_args["keep"] = keep_statuses
+            return [11, 12, 13]
+
+        def _fake_ingest(rid, model, important_programs):
+            ingest_args["called"] = True
+            return "ingested"
+
+        monkeypatch.setattr(
+            report_service.database, "delete_analyses_by_report", _fake_delete
+        )
+        monkeypatch.setattr(report_service, "checkpoint_path", lambda p: _FakePath())
+        monkeypatch.setattr(report_service, "ingest_report", _fake_ingest)
+
+        result = report_service.reprocess_report(REPORT_ID, "ollama", None, partial=True)
+
+        assert result == "ingested"
+        assert delete_args["keep"] == ["completed"]
+        assert ingest_args["called"] is True
+
+    def test_full_deletes_everything(self, monkeypatch):
+        from api import report_service
+
+        delete_args = {}
+
+        class _FakePath:
+            def exists(self):
+                return False
+
+        monkeypatch.setattr(
+            report_service.report_ingestion, "validate_report_id", lambda rid: True
         )
         monkeypatch.setattr(
-            "api.queue_repair.rebuild_analysis_inputs", _rebuild
+            report_service.database,
+            "get_analyses_by_report",
+            lambda ref: self._analyses(),
+        )
+        monkeypatch.setattr(
+            report_service.database,
+            "get_analysis_files",
+            lambda aid: [],
         )
 
-        result = report_service.reprocess_report_partial(REPORT_ID, "ollama")
+        def _fake_delete(ref, keep_statuses=None):
+            delete_args["keep"] = keep_statuses
+            return [11, 12, 13, 14]
 
-        assert result.total_failed == 2
-        assert result.requeued == 2
-        assert result.skipped == 0
-        # Completed (13) and pending (14) are never touched.
-        assert sorted(s["analysis_id"] for s in sent) == [11, 12]
-        # The stored per-analysis model wins over the request fallback.
-        assert sent[0]["model"] == "ollama"  # stored
-        assert sent[1]["model"] == "ollama"  # fallback (stored was None)
+        def _fake_ingest(rid, model, important_programs):
+            return "ingested"
+
+        monkeypatch.setattr(
+            report_service.database, "delete_analyses_by_report", _fake_delete
+        )
+        monkeypatch.setattr(report_service, "checkpoint_path", lambda p: _FakePath())
+        monkeypatch.setattr(report_service, "ingest_report", _fake_ingest)
+
+        report_service.reprocess_report(REPORT_ID, "ollama", None, partial=False)
+
+        assert delete_args["keep"] is None
 
 
 class TestPartialReprocessEndpoint:
-    def test_partial_routes_to_partial_service(self, monkeypatch):
+    def test_partial_passes_flag_to_service(self, monkeypatch):
         captured = {}
 
         monkeypatch.setattr(
             api_module.report_ingestion, "validate_report_id", lambda rid: True
         )
 
-        def _fake_partial(rid, model):
-            captured["rid"] = rid
-            captured["model"] = model
-            return {
-                "report_id": rid,
-                "total_failed": 2,
-                "requeued": 2,
-                "skipped": 0,
-                "items": [],
-            }
-
-        monkeypatch.setattr(
-            api_module.report_service, "reprocess_report_partial", _fake_partial
-        )
-
-        client = TestClient(api_module.app)
-        resp = client.post(
-            f"/api/reports/{REPORT_ID}/reprocess",
-            json={"model": "ollama", "partial": True},
-        )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["total_failed"] == 2
-        assert body["requeued"] == 2
-        assert captured["rid"] == REPORT_ID
-
-    def test_partial_false_uses_full_reprocess(self, monkeypatch):
-        monkeypatch.setattr(
-            api_module.report_ingestion, "validate_report_id", lambda rid: True
-        )
-
-        def _fake_full(rid, model, important_programs):
+        def _fake(rid, model, important_programs, partial):
+            captured["partial"] = partial
             return {
                 "report_id": rid,
                 "report_reference": rid,
@@ -117,16 +213,28 @@ class TestPartialReprocessEndpoint:
                 "charts": [],
             }
 
-        monkeypatch.setattr(api_module.report_service, "reprocess_report", _fake_full)
-        called = {"partial": False}
+        monkeypatch.setattr(api_module.report_service, "reprocess_report", _fake)
 
-        def _fake_partial(rid, model):
-            called["partial"] = True
-            return {}
+        client = TestClient(api_module.app)
+        resp = client.post(
+            f"/api/reports/{REPORT_ID}/reprocess",
+            json={"model": "ollama", "partial": True},
+        )
+        assert resp.status_code == 200, resp.text
+        assert captured["partial"] is True
+
+    def test_full_uses_partial_false(self, monkeypatch):
+        captured = {}
 
         monkeypatch.setattr(
-            api_module.report_service, "reprocess_report_partial", _fake_partial
+            api_module.report_ingestion, "validate_report_id", lambda rid: True
         )
+
+        def _fake(rid, model, important_programs, partial):
+            captured["partial"] = partial
+            return {"report_id": rid, "charts": []}
+
+        monkeypatch.setattr(api_module.report_service, "reprocess_report", _fake)
 
         client = TestClient(api_module.app)
         resp = client.post(
@@ -134,30 +242,30 @@ class TestPartialReprocessEndpoint:
             json={"model": "ollama", "partial": False},
         )
         assert resp.status_code == 200, resp.text
-        assert called["partial"] is False
+        assert captured["partial"] is False
 
 
 class TestPartialReprocessBatchActor:
-    def test_batch_partial_calls_partial_service(self, monkeypatch):
+    def test_batch_passes_partial_to_service(self, monkeypatch):
         import tasks
 
         calls = []
 
-        def _fake_partial(rid, model):
-            calls.append(("partial", rid, model))
-            from api.models import ReportPartialReprocessResponse
+        class _Resp:
+            created = 1
+            skipped = 0
+            failed = 0
 
-            return ReportPartialReprocessResponse(
-                report_id=rid, total_failed=1, requeued=1, skipped=0, items=[]
-            )
+        def _fake_reprocess(rid, model, important_programs, partial):
+            calls.append(partial)
+            return _Resp()
 
         monkeypatch.setattr(
-            "api.report_service.reprocess_report_partial", _fake_partial
+            "api.report_service.reprocess_report", _fake_reprocess
         )
 
         result = tasks.reprocess_report_batch.fn(
             reports=[REPORT_ID], model="ollama", important_programs=None, partial=True
         )
-        assert calls == [("partial", REPORT_ID, "ollama")]
+        assert calls == [True]
         assert result["results"][REPORT_ID]["status"] == "ok"
-        assert result["results"][REPORT_ID]["requeued"] == 1

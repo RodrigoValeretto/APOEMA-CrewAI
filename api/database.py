@@ -1242,24 +1242,40 @@ def get_report_status_counts(report_reference: str) -> Dict[str, int]:
         raise DatabaseError(f"Failed to get report status counts: {str(e)}")
 
 
-def delete_analyses_by_report(report_reference: str) -> List[int]:
-    """Delete every analysis of a report (cascade clears results + mappings).
+def delete_analyses_by_report(
+    report_reference: str,
+    keep_statuses: Optional[List[str]] = None,
+) -> List[int]:
+    """Delete a report's analyses, optionally preserving some statuses.
 
-    Returns the deleted analysis ids so the caller can clean up the per-chart
-    files and run checkpoints. ``analysis_files`` rows are NOT touched here —
-    the caller deletes the PNG/CSV assets explicitly after the cascade.
+    When ``keep_statuses`` is given, analyses in those statuses are kept
+    (e.g. ``["completed"]`` for a partial reprocess that only re-runs the
+    non-completed charts); everything else under the report is deleted. The
+    cascade clears results + mappings. Returns the deleted analysis ids so the
+    caller can clean up the per-chart files and run checkpoints.
+
+    ``analysis_files`` rows are NOT touched here — the caller deletes the
+    PNG/CSV assets explicitly after the cascade.
     """
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
+                if keep_statuses:
+                    placeholders = ", ".join(["%s"] * len(keep_statuses))
+                    cond = f" AND status NOT IN ({placeholders})"
+                    params = [report_reference, *keep_statuses]
+                else:
+                    cond = ""
+                    params = [report_reference]
+
                 cur.execute(
-                    "SELECT id FROM analysis WHERE report_reference = %s",
-                    (report_reference,),
+                    f"SELECT id FROM analysis WHERE report_reference = %s{cond}",
+                    params,
                 )
                 ids = [r[0] for r in cur.fetchall()]
                 cur.execute(
-                    "DELETE FROM analysis WHERE report_reference = %s",
-                    (report_reference,),
+                    f"DELETE FROM analysis WHERE report_reference = %s{cond}",
+                    params,
                 )
                 conn.commit()
                 return ids

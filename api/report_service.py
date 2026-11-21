@@ -26,8 +26,6 @@ from .areas_catalog import area_code_from_name, area_key
 from .models import (
     ReportIngestItem,
     ReportIngestResponse,
-    ReportPartialReprocessItem,
-    ReportPartialReprocessResponse,
 )
 from retry_utils import checkpoint_path
 
@@ -232,35 +230,57 @@ def reprocess_report(
     report_id: str,
     model: str,
     important_programs: Optional[List[str]] = None,
+    partial: bool = False,
 ) -> ReportIngestResponse:
-    """Delete a report's existing analyses and re-ingest it from scratch.
+    """Delete a report's analyses and re-ingest, then return the ingest summary.
 
-    Removes every analysis under ``report_reference`` = report id (cascade
-    clears their results and file mappings), deletes the per-chart PNG/CSV
-    assets and the run checkpoints, then re-runs the normal ingest. The
-    assessment/attachment files belong to the corpus and are shared across
-    analyses, so they are left untouched.
+    ``partial=False`` (default): delete EVERY analysis under ``report_reference``
+    = report id (cascade clears their results + file mappings), drop their
+    checkpoints and per-chart PNG/CSV assets, then re-run the normal ingest —
+    every chart is recreated as a fresh ``pending`` analysis.
 
-    Returns the same ``ReportIngestResponse`` as ``ingest_report``.
+    ``partial=True``: delete only the NON-completed analyses (failed, pending,
+    processing, cancelled) and keep ``completed`` intact, then re-run the
+    ingest. Because the ingest is idempotent per chart URL, the completed charts
+    are skipped and only the deleted ones are recreated as ``pending`` — so a
+    partial reprocess re-runs exactly the charts that didn't finish.
+
+    In both modes the corpus assessment/attachments are shared and left
+    untouched.
     """
     if not report_ingestion.validate_report_id(report_id):
         raise InvalidAnalysisInput(
             f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
         )
 
-    # 1. Collect the report's per-chart files BEFORE deleting the analyses
-    #    (the mappings are the only link to them and die with the cascade).
+    keep_statuses = [AnalysisStatus.COMPLETED.value] if partial else None
+
+    # 1. Collect the analyses we're about to delete (their per-chart files are
+    #    only reachable through the mappings, which die with the cascade).
     analyses = database.get_analyses_by_report(report_id)
+    to_delete_ids = {
+        a["id"]
+        for a in analyses
+        if keep_statuses is None or a["status"] not in keep_statuses
+    }
+
     chart_file_ids = []
     for a in analyses:
+        if a["id"] not in to_delete_ids:
+            continue
         for f in database.get_analysis_files(a["id"]):
             if f["file_type"] in (FileType.PNG.value, FileType.CSV.value):
                 chart_file_ids.append(f["id"])
 
     # 2. Delete the analyses (cascade removes results + mappings).
-    deleted_ids = database.delete_analyses_by_report(report_id)
+    deleted_ids = database.delete_analyses_by_report(
+        report_id, keep_statuses=keep_statuses
+    )
     logger.info(
-        "[Reports] %s reprocess: deleted %d analyses", report_id, len(deleted_ids)
+        "[Reports] %s reprocess (partial=%s): deleted %d analyses",
+        report_id,
+        partial,
+        len(deleted_ids),
     )
 
     # 3. Drop the run checkpoints for the deleted analyses (fresh start).
@@ -288,79 +308,6 @@ def reprocess_report(
                 e,
             )
 
-    # 5. Re-ingest from scratch.
+    # 5. Re-ingest. Idempotent per chart URL, so in partial mode the kept
+    #    (completed) charts are skipped and only the deleted ones are recreated.
     return ingest_report(report_id, model, important_programs)
-
-
-def reprocess_report_partial(
-    report_id: str,
-    model: str = "ollama",
-) -> ReportPartialReprocessResponse:
-    """Re-enqueue only a report's FAILED analyses, keeping the rest intact.
-
-    Unlike ``reprocess_report`` (which deletes everything and re-ingests), this
-    leaves completed/pending/processing analyses untouched and re-enqueues each
-    ``failed`` analysis through the FIFO gate with its ORIGINAL inputs and
-    model. The run actor's claim then flips ``failed`` → ``processing`` when
-    the slot is free; checkpoint/resume means the flow resumes from the last
-    completed task instead of restarting.
-
-    The request ``model`` is used only as a fallback when an analysis has no
-    stored model (the stored per-analysis model wins).
-    """
-    # Lazy import: tasks imports this module for the batch actor.
-    from tasks import enqueue_analysis_for_sequential_processing
-    from .queue_repair import rebuild_analysis_inputs
-
-    if not report_ingestion.validate_report_id(report_id):
-        raise InvalidAnalysisInput(
-            f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
-        )
-
-    analyses = database.get_analyses_by_report(report_id)
-    failed = [a for a in analyses if a["status"] == AnalysisStatus.FAILED.value]
-
-    items: List[ReportPartialReprocessItem] = []
-    requeued = 0
-    for a in failed:
-        try:
-            inputs = rebuild_analysis_inputs(a["id"])
-        except InvalidAnalysisInput as e:
-            items.append(
-                ReportPartialReprocessItem(
-                    analysis_id=a["id"], status="skipped", reason=str(e)
-                )
-            )
-            continue
-
-        enqueue_analysis_for_sequential_processing.send(
-            analysis_id=a["id"],
-            assessment_file=inputs["assessment_file"],
-            pdf_file=inputs["pdf_file"],
-            png_file=inputs["png_file"],
-            csv_file=inputs["csv_file"],
-            output_prefix=f"analysis_{a['id']}",
-            model=a.get("model") or model,
-            important_programs=a.get("important_programs") or [],
-            knowledge_files=inputs["knowledge_files"],
-        )
-        items.append(
-            ReportPartialReprocessItem(analysis_id=a["id"], status="requeued")
-        )
-        requeued += 1
-
-    logger.info(
-        "[Reports] %s partial reprocess: %d failed, %d requeued, %d skipped",
-        report_id,
-        len(failed),
-        requeued,
-        len(failed) - requeued,
-    )
-
-    return ReportPartialReprocessResponse(
-        report_id=report_id,
-        total_failed=len(failed),
-        requeued=requeued,
-        skipped=len(failed) - requeued,
-        items=items,
-    )

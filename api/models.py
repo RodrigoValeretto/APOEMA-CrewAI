@@ -566,31 +566,12 @@ class ReportReprocessRequest(BaseModel):
     partial: bool = Field(
         False,
         description=(
-            "When true, re-enqueue only the report's FAILED analyses (keeping "
-            "completed/pending/processing intact) instead of deleting and "
-            "re-ingesting everything from scratch"
+            "When true, delete only the NON-completed analyses (failed, pending, "
+            "processing, cancelled) and re-ingest just those charts as pending, "
+            "keeping completed analyses intact; when false, delete and re-ingest "
+            "everything"
         ),
     )
-
-
-class ReportPartialReprocessItem(BaseModel):
-    """Outcome of re-enqueuing one failed analysis in a partial reprocess."""
-
-    analysis_id: int = Field(..., description="Analysis id re-enqueued or skipped")
-    status: str = Field(..., description="'requeued' or 'skipped'")
-    reason: Optional[str] = Field(
-        None, description="Why the analysis was skipped (only when status='skipped')"
-    )
-
-
-class ReportPartialReprocessResponse(BaseModel):
-    """Result of a partial reprocess (re-run only failed analyses)."""
-
-    report_id: str = Field(..., description="The report id that was partially reprocessed")
-    total_failed: int = Field(..., description="Failed analyses found under the report")
-    requeued: int = Field(..., description="Failed analyses re-enqueued through the gate")
-    skipped: int = Field(..., description="Failed analyses skipped (missing inputs, etc.)")
-    items: List[ReportPartialReprocessItem] = Field(default_factory=list)
 
 
 class ReportStatusItem(BaseModel):

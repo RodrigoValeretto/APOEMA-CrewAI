@@ -1093,33 +1093,29 @@ async def reprocess_reports_batch_endpoint(request: ReportBatchReprocessRequest)
     tags=["Analysis"],
 )
 async def reprocess_report_endpoint(report_id: str, request: ReportReprocessRequest):
-    """Delete a report's analyses and re-ingest it from scratch, or re-run only failed ones.
+    """Delete a report's analyses and re-ingest it, fully or partially.
 
-    ``partial=false`` (default): drop every analysis under ``report_reference``
+    ``partial=false`` (default): delete EVERY analysis under ``report_reference``
     = report id (and their checkpoints + per-chart PNG/CSV assets), then re-run
-    the normal ingest.
+    the normal ingest — every chart becomes a fresh ``pending`` analysis.
 
-    ``partial=true``: leave completed/pending/processing analyses untouched and
-    re-enqueue only the ``failed`` ones through the gate (returns a
-    ``ReportPartialReprocessResponse``).
+    ``partial=true``: delete only the NON-completed analyses (failed, pending,
+    processing, cancelled), keep ``completed``, then re-run the ingest — the
+    idempotent ingest recreates only the deleted charts as ``pending``.
+
+    Both return the same ``ReportIngestResponse`` as ``ingest_report``.
     """
     try:
         if not report_ingestion.validate_report_id(report_id):
             raise InvalidAnalysisInput(
                 f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
             )
-        if request.partial:
-            response = await asyncio.to_thread(
-                report_service.reprocess_report_partial,
-                report_id,
-                request.model,
-            )
-            return response
         response = await asyncio.to_thread(
             report_service.reprocess_report,
             report_id,
             request.model,
             request.important_programs,
+            request.partial,
         )
         return response
 
