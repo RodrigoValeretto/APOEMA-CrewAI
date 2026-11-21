@@ -151,6 +151,45 @@ def get_analyses_by_report(report_reference: str) -> List[Dict[str, Any]]:
         raise DatabaseError(f"Failed to get analyses by report: {str(e)}")
 
 
+def get_pending_analyses(limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    List analyses still 'pending' in FIFO order (lowest id first).
+
+    Used by the orphan-repair endpoint/watchdog: a 'pending' row whose
+    RabbitMQ message was lost (a queue purge) blocks the FIFO gate forever,
+    so this enumerates the candidates to re-enqueue.
+
+    Args:
+        limit: Optional cap on the number of rows returned (for bounded repair
+            passes). None returns all pending rows.
+
+    Returns:
+        List of analysis dicts (id, type, status, model, important_programs,
+        corpus_id, report_reference, created_at, updated_at) ordered by id.
+
+    Raises:
+        DatabaseError: If database operation fails
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                query = """
+                    SELECT id, type, status, model, important_programs,
+                           corpus_id, report_reference, created_at, updated_at
+                    FROM analysis
+                    WHERE status = 'pending'
+                    ORDER BY id
+                """
+                if limit:
+                    query += " LIMIT %s"
+                    cur.execute(query, (limit,))
+                else:
+                    cur.execute(query)
+                return [dict(row) for row in cur.fetchall()]
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to list pending analyses: {str(e)}")
+
+
 def get_report_png_urls(report_reference: str) -> set:
     """PNG source URLs already analyzed under a report (idempotent re-ingest).
 
@@ -388,7 +427,7 @@ def claim_analysis_for_processing(analysis_id: int) -> bool:
                     """
                     UPDATE analysis
                     SET status = 'processing', updated_at = %s
-                    WHERE id = %s AND status != 'completed'
+                    WHERE id = %s AND status NOT IN ('completed', 'cancelled')
                     """,
                     (datetime.now(), analysis_id),
                 )
@@ -793,6 +832,50 @@ def count_processing_analyses(exclude_analysis_id: Optional[int] = None) -> int:
                 return count
     except psycopg.Error as e:
         raise DatabaseError(f"Failed to count processing analyses: {str(e)}")
+
+
+def count_pending_analyses() -> int:
+    """Count analyses in 'pending' status.
+
+    Used by the orphan-repair watchdog to detect a deadlocked gate (pending > 0
+    with processing == 0, the signature of orphaned pending rows).
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM analysis WHERE status = 'pending'")
+                count = cur.fetchone()[0]
+                return count
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to count pending analyses: {str(e)}")
+
+
+def cancel_pending_analyses() -> int:
+    """Mark every 'pending' analysis as 'cancelled' (terminal, non-blocking).
+
+    Used by the cancel-pending endpoint: a user wants to clear the queue WITHOUT
+    running it. 'cancelled' is a terminal status the FIFO gate ignores and the
+    run actor's idempotency guard drops, so a residual message re-delivered
+    later can never execute a cancelled analysis (unlike 'failed', which the
+    claim accepts for retry/resume).
+
+    Returns the number of rows transitioned.
+    """
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE analysis
+                    SET status = 'cancelled', updated_at = %s
+                    WHERE status = 'pending'
+                    """,
+                    (datetime.now(),),
+                )
+                conn.commit()
+                return cur.rowcount
+    except psycopg.Error as e:
+        raise DatabaseError(f"Failed to cancel pending analyses: {str(e)}")
 
 
 def count_older_pending_analyses(analysis_id: int) -> int:

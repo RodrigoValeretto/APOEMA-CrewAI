@@ -95,6 +95,7 @@ from .validators import (
 )
 from .middleware import setup_middleware
 from . import database, file_manager, report_ingestion, report_service
+from . import queue_repair
 from zombie_kill import (
     kill_zombie_analysis as zombie_kill_single,
     cleanup_zombies as zombie_cleanup_all,
@@ -147,6 +148,21 @@ async def _zombie_watchdog_loop():
                 )
         except Exception as e:  # never let the loop die
             logger.exception("Zombie watchdog pass failed: %s", e)
+
+        # Orphan repair (separate concern, same cadence): when pending analyses
+        # exist but nothing is processing, the FIFO gate is deadlocked by rows
+        # whose messages were lost. Re-enqueue them oldest-first to unlock it.
+        try:
+            repair = await asyncio.to_thread(queue_repair.run_orphan_repair_once)
+            if repair.get("deadlocked"):
+                logger.info(
+                    "Watchdog repaired orphaned pending: reenqueued=%d checked=%d skipped=%d",
+                    repair.get("reenqueued", 0),
+                    repair.get("checked", 0),
+                    len(repair.get("skipped", [])),
+                )
+        except Exception as e:  # never let the loop die
+            logger.exception("Orphan repair watchdog pass failed: %s", e)
 
 
 @contextlib.asynccontextmanager
@@ -658,6 +674,67 @@ async def zombie_cleanup_endpoint(
     """
     try:
         result = zombie_cleanup_all(older_than_seconds=older_than_seconds)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/analysis/repair-orphans",
+    tags=["Analysis"],
+)
+async def repair_orphans_endpoint(
+    max_count: Optional[int] = Query(
+        None,
+        ge=1,
+        description="Optional cap on how many pending analyses to re-enqueue (default: all)",
+    ),
+):
+    """
+    Re-enqueue orphaned 'pending' analyses whose RabbitMQ messages were lost.
+
+    A queue purge (manual or the zombie-kill blanket purge) deletes messages
+    while their rows stay 'pending'; the FIFO gate then blocks every analysis
+    behind them forever. This rebuilds each orphan's inputs from its file
+    mappings and re-enqueues it through the gate, oldest first. Safe to call
+    repeatedly: the gate actor drops duplicate messages for analyses already
+    running/done, and checkpoint/resume keeps execution idempotent.
+    """
+    try:
+        result = await asyncio.to_thread(
+            queue_repair.repair_orphaned_pending, max_count=max_count
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/analysis/cancel-pending",
+    tags=["Analysis"],
+)
+async def cancel_pending_endpoint():
+    """
+    Clear the pending queue WITHOUT running it.
+
+    Marks every 'pending' analysis 'cancelled' (a terminal, non-blocking status
+    the FIFO gate ignores) and purges the analysis queues so no residual message
+    survives to re-deliver. A cancelled analysis can never execute — the run
+    actor's idempotency guard drops its messages and the claim's CAS excludes it.
+
+    Use this when a large backlog was enqueued by mistake and you want to empty
+    the queue instead of processing it. Not reversible via the retry endpoint
+    (which only re-runs 'failed' analyses); to process the work again, submit new
+    analyses.
+    """
+    try:
+        result = await asyncio.to_thread(queue_repair.cancel_pending, purge=True)
         return result
     except Exception as e:
         raise HTTPException(

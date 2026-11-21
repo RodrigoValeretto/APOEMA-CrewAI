@@ -282,6 +282,16 @@ Cliente faz polling:
     `ZOMBIE_WATCHDOG_INTERVAL` (default 1800 s; `0` desativa) para linhas presas há
     mais de `ZOMBIE_WATCHDOG_THRESHOLD` (default 1800 s). `failed` não bloqueia a
     fila; `processing`/`queued` bloqueiam — ver `zombie_kill.py`.
+- **POST /api/analysis/repair-orphans?max_count=N** (opcional)
+  - Reenfileira análises `pending` órfãs (mensagem RabbitMQ perdida por purge) em
+    ordem FIFO, reconstruindo os inputs de `analysis_file_mapping`. Idempotente: o
+    run actor derruba mensagens duplicadas. O watchdog também repara sozinho
+    quando detecta deadlock (`pending>0` e `processing=0`).
+- **POST /api/analysis/cancel-pending**
+  - Response: `{cancelled: N, purged_messages: N}`
+  - Limpa a fila **sem rodar**: marca toda `pending` como `cancelled` (status
+    terminal que o gate ignora e o run actor derruba) e purga as filas. Usar
+    quando um backlog foi enfileirado por engano e não deve ser processado.
 
 ### File Management
 - **POST /api/files/assessment**
