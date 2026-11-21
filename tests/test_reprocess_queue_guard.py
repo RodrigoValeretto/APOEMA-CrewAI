@@ -79,3 +79,99 @@ class TestRunActorDeletedRowGuard:
         # The guard passed (row exists), so the claim was attempted.
         assert calls["claimed"] is True
         assert result["status"] == "queued"
+
+    def test_duplicate_message_for_running_analysis_drops(self, monkeypatch):
+        """A second message for an already-processing analysis is dropped."""
+        import tasks
+
+        calls = {"claimed": False, "ran": False}
+
+        def _fake_get(analysis_id):
+            return {"id": analysis_id, "status": "processing"}
+
+        def _fake_claim(analysis_id):
+            calls["claimed"] = True
+            return True
+
+        def _fake_run(**kwargs):
+            calls["ran"] = True
+            return {}
+
+        monkeypatch.setattr(tasks, "get_analysis", _fake_get)
+        monkeypatch.setattr(tasks, "claim_analysis_processing_slot", _fake_claim)
+        monkeypatch.setattr(tasks, "run_apoema_flow", _fake_run)
+
+        result = tasks.run_analysis_flow_with_tracking.fn(
+            analysis_id=7,
+            assessment_file="/app/input/cc_assessment_data.json",
+            pdf_file=None,
+            png_file=None,
+            csv_file=None,
+            output_prefix="analysis_7",
+            model="ollama",
+            important_programs=None,
+            knowledge_files=None,
+        )
+
+        assert result["status"] == "dropped"
+        assert calls["claimed"] is False
+        assert calls["ran"] is False
+
+    def test_duplicate_message_for_completed_analysis_drops(self, monkeypatch):
+        """A second message for a completed analysis is dropped (no requeue loop)."""
+        import tasks
+
+        def _fake_get(analysis_id):
+            return {"id": analysis_id, "status": "completed"}
+
+        monkeypatch.setattr(tasks, "get_analysis", _fake_get)
+        monkeypatch.setattr(
+            tasks, "claim_analysis_processing_slot", lambda aid: True
+        )
+
+        result = tasks.run_analysis_flow_with_tracking.fn(
+            analysis_id=8,
+            assessment_file="/app/input/cc_assessment_data.json",
+            pdf_file=None,
+            png_file=None,
+            csv_file=None,
+            output_prefix="analysis_8",
+            model="ollama",
+            important_programs=None,
+            knowledge_files=None,
+        )
+
+        assert result["status"] == "dropped"
+
+    def test_failed_analysis_is_not_dropped(self, monkeypatch):
+        """A failed analysis proceeds to claim (the actor-retry / resume path)."""
+        import tasks
+
+        calls = {"claimed": False}
+
+        def _fake_get(analysis_id):
+            return {"id": analysis_id, "status": "failed"}
+
+        def _fake_claim(analysis_id):
+            calls["claimed"] = True
+            return False  # slot busy -> requeue, but claim WAS attempted
+
+        monkeypatch.setattr(tasks, "get_analysis", _fake_get)
+        monkeypatch.setattr(tasks, "claim_analysis_processing_slot", _fake_claim)
+        monkeypatch.setattr(
+            tasks, "_requeue_through_gate", lambda *a, **kw: {"status": "queued"}
+        )
+
+        result = tasks.run_analysis_flow_with_tracking.fn(
+            analysis_id=9,
+            assessment_file="/app/input/cc_assessment_data.json",
+            pdf_file=None,
+            png_file=None,
+            csv_file=None,
+            output_prefix="analysis_9",
+            model="ollama",
+            important_programs=None,
+            knowledge_files=None,
+        )
+
+        assert calls["claimed"] is True

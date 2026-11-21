@@ -457,6 +457,77 @@ O watchdog roda a cada `ZOMBIE_WATCHDOG_INTERVAL` (default 1800 s) sem interven�
 A purga das filas é obrigatória — sem ela a mensagem órfã re-entregue ressuscita a
 análise de volta para `processing` quando o worker reinicia.
 
+### Análises `pending` que nunca rodam (fila "travada")
+
+Sintoma: o worker está `Up` (o `unhealthy` do healthcheck é **cosmético** — a
+imagem não tem `pgrep` e o padrão não casa com o cmdline real), o log mostra só
+`N older analysis(es) pending (FIFO)` em loop de backoff, o ollama está em
+silêncio, e o banco tem `pending` em massa com `processing = 0`.
+
+Isso NÃO é um zumbi — é uma **órfã**: uma análise `pending` cuja mensagem no
+RabbitMQ se perdeu (purga da fila `default`), então o gate FIFO
+(`count_older_pending_analyses`) conta ela como "older pending" pra **todas** as
+análises atrás dela. Ninguém consegue claimar → livelock (worker vivo, zero
+execução).
+
+**Diagnóstico (3 comandos):**
+
+```bash
+# 1. Estado das análises — a assinatura é pending>0 com processing=0
+docker exec apoema-postgres psql -U apoema -d apoema_db \
+  -c "SELECT status, COUNT(*) FROM analysis GROUP BY status ORDER BY count DESC;"
+
+# 2. A órfã é a pending mais antiga (menor id, updated_at congelado)
+docker exec apoema-postgres psql -U apoema -d apoema_db \
+  -c "SELECT id, status, created_at, updated_at FROM analysis WHERE status='pending' ORDER BY id ASC LIMIT 5;"
+
+# 3. Confirma a perda: mensagens na fila << linhas pending
+docker exec apoema-rabbitmq rabbitmqctl list_queues name messages
+# default=0 + centenas de pending = mensagens perdidas
+```
+
+**Correção:**
+
+```bash
+# Reenfileira todas as pending em ordem FIFO (idempotente — ver nota abaixo)
+curl -X POST "http://localhost:8000/api/analysis/repair-orphans"
+
+# Ou com limite (repara as N mais antigas por chamada)
+curl -X POST "http://localhost:8000/api/analysis/repair-orphans?max_count=100"
+
+# Alternativa: limpar a fila SEM rodar (marca pending -> cancelled + purga)
+curl -X POST "http://localhost:8000/api/analysis/cancel-pending"
+```
+
+O `cancel-pending` é a opção destrutiva: marca toda `pending` como `cancelled`
+(status terminal que o gate ignora e o run actor derruba) e purga as filas.
+Use quando o backlog foi enfileirado por engano e não deve ser processado —
+`cancelled` não é retryável via `/retry` (que só re-roda `failed`); para
+processar o trabalho de novo, submeta novas análises.
+
+O watchdog do app também detecta o deadlock (`pending>0` e `processing=0`) e
+repara sozinho a cada `ZOMBIE_WATCHDOG_INTERVAL`, sem intervenção.
+
+O endpoint é idempotente: o run actor derruba mensagens duplicadas de análises
+já `processing`/`completed`, então reenfileirar uma análise que ainda tem
+mensagem não a executa duas vezes.
+
+**Como NÃO agir (causa-raiz):**
+
+- **Nunca dê `purge` manual na fila `default`** (`rabbitmqctl purge_queue
+  default`, ou o painel admin na porta 15672). O purge apaga mensagens de
+  análises `pending` legítimas e cria exatamente este estado — as linhas
+  ficam órfãs e bloqueiam o gate pra sempre. Se precisar limpar, use os
+  endpoints (`zombie-kill` / `zombies/cleanup` / `repair-orphans`), nunca o
+  purge cru.
+- **Não rode `UPDATE analysis SET status='failed'` à mão como "correção"** sem
+  reenfileirar — marcar `failed` destrava o gate, mas a análise fica sem
+  mensagem e nunca roda; ela precisa do reenqueue em seguida (que é o que o
+  endpoint faz).
+- **Não reinicie o worker na esperança de destravar** — as órfãs estão no
+  banco, não no broker; reiniciar só faz as mensagens sobreviventes girarem de
+  novo. Corrija o banco (repair-orphans) primeiro.
+
 ### Resultado não salvo no banco
 
 Certifique-se de:

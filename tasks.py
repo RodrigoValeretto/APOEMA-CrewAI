@@ -260,7 +260,7 @@ def run_analysis_flow_with_tracking(
         # the message instead of running a flow whose results have nowhere to
         # go (and whose slot no longer exists to block the gate).
         try:
-            get_analysis(analysis_id)
+            row = get_analysis(analysis_id)
         except AnalysisNotFound:
             logger.info(
                 f"[Analysis {analysis_id}] Row deleted (reprocess?); dropping message"
@@ -269,6 +269,26 @@ def run_analysis_flow_with_tracking(
                 "analysis_id": analysis_id,
                 "status": "dropped",
                 "message": "Analysis row no longer exists; message dropped",
+            }
+
+        # Idempotency guard: drop duplicate messages for an analysis that is
+        # already running, finished, or cancelled. Without this, a second
+        # message for the same analysis finds the claim's CAS false once
+        # completed/cancelled and _requeue_through_gate re-enqueues it forever
+        # (a tight requeue loop). It also stops a re-delivered orphan message
+        # from resurrecting a zombie back to 'processing' (the resurrection
+        # trap) — the zombie watchdog/repair owns that recovery, not a stale
+        # message. 'failed' is deliberately allowed through: that is the normal
+        # actor-retry path (a transient failure re-runs from checkpoint).
+        if row["status"] in ("processing", "completed", "cancelled"):
+            logger.info(
+                f"[Analysis {analysis_id}] Already %s; dropping duplicate message",
+                row["status"],
+            )
+            return {
+                "analysis_id": analysis_id,
+                "status": "dropped",
+                "message": f"Analysis already {row['status']}; duplicate message dropped",
             }
 
         # Atomically claim the single-processing slot. Actor-level retries
