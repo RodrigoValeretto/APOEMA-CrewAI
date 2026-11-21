@@ -299,7 +299,9 @@ async def health_check():
 
     # Check database
     try:
-        _ = database.get_connection()
+        with database.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
         services["database"] = "ok"
     except Exception as e:
         services["database"] = f"error: {str(e)}"

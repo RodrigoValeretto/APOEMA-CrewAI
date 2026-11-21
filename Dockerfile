@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir \
 
 # Instalar Python packages (inclui o extra 'converter': docling p/ PDF->JSON)
 RUN pip install --no-cache-dir \
-    psycopg[binary] \
+    "psycopg[binary,pool]" \
     dramatiq[rabbitmq] \
     -e ".[converter]"
 

@@ -20,6 +20,13 @@ class Config:
     DB_USER = os.getenv("DB_USER", "apoema")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "apoema_dev_password")
     DB_NAME = os.getenv("DB_NAME", "apoema_db")
+    # Connection pool sizing. Every query used to open/close a fresh psycopg
+    # connection, which under the FIFO backoff loop produced ~27k TIME_WAIT
+    # sockets and exhausted the ephemeral-port range (intermittent
+    # "Cannot assign requested address"). A small pool reuses connections and
+    # eliminates the connect/close churn entirely.
+    DB_POOL_MIN_SIZE = int(os.getenv("DB_POOL_MIN_SIZE", "2"))
+    DB_POOL_MAX_SIZE = int(os.getenv("DB_POOL_MAX_SIZE", "20"))
 
     @property
     def DATABASE_URL(self) -> str:
