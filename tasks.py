@@ -547,32 +547,50 @@ def reprocess_report_batch(
     reports: list,
     model: str = "ollama",
     important_programs: list = None,
+    partial: bool = False,
 ) -> dict:
     """Reprocess a list of APOEMA reports, one at a time.
 
     Each report is deleted and re-ingested by
     ``report_service.reprocess_report`` (which drops the report's analyses +
-    checkpoints + per-chart assets, then re-runs the ingest). The reports are
-    processed serially in list order; a report that fails is recorded and
-    skipped without aborting the rest.
+    checkpoints + per-chart assets, then re-runs the ingest). With
+    ``partial=True``, only the report's FAILED analyses are re-enqueued (via
+    ``report_service.reprocess_report_partial``), leaving the rest intact. The
+    reports are processed serially in list order; a report that fails is
+    recorded and skipped without aborting the rest.
     """
-    from api.report_service import reprocess_report
+    from api.report_service import reprocess_report, reprocess_report_partial
 
     results = {}
     for report_id in reports:
         try:
-            logger.info(f"[Reports] Reprocessing report {report_id} ...")
-            resp = reprocess_report(report_id, model, important_programs)
-            results[report_id] = {
-                "status": "ok",
-                "created": resp.created,
-                "skipped": resp.skipped,
-                "failed": resp.failed,
-            }
-            logger.info(
-                f"[Reports] {report_id} reprocessed: created={resp.created} "
-                f"skipped={resp.skipped} failed={resp.failed}"
-            )
+            if partial:
+                logger.info(f"[Reports] Partially reprocessing report {report_id} ...")
+                resp = reprocess_report_partial(report_id, model)
+                results[report_id] = {
+                    "status": "ok",
+                    "total_failed": resp.total_failed,
+                    "requeued": resp.requeued,
+                    "skipped": resp.skipped,
+                }
+                logger.info(
+                    f"[Reports] {report_id} partial reprocess: "
+                    f"failed={resp.total_failed} requeued={resp.requeued} "
+                    f"skipped={resp.skipped}"
+                )
+            else:
+                logger.info(f"[Reports] Reprocessing report {report_id} ...")
+                resp = reprocess_report(report_id, model, important_programs)
+                results[report_id] = {
+                    "status": "ok",
+                    "created": resp.created,
+                    "skipped": resp.skipped,
+                    "failed": resp.failed,
+                }
+                logger.info(
+                    f"[Reports] {report_id} reprocessed: created={resp.created} "
+                    f"skipped={resp.skipped} failed={resp.failed}"
+                )
         except Exception as e:
             logger.error(f"[Reports] {report_id} reprocess failed: {e}")
             results[report_id] = {"status": "error", "message": str(e)[:500]}

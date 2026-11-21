@@ -23,7 +23,12 @@ from .constants import (
 )
 from .exceptions import InvalidAnalysisInput
 from .areas_catalog import area_code_from_name, area_key
-from .models import ReportIngestItem, ReportIngestResponse
+from .models import (
+    ReportIngestItem,
+    ReportIngestResponse,
+    ReportPartialReprocessItem,
+    ReportPartialReprocessResponse,
+)
 from retry_utils import checkpoint_path
 
 logger = logging.getLogger(__name__)
@@ -285,3 +290,77 @@ def reprocess_report(
 
     # 5. Re-ingest from scratch.
     return ingest_report(report_id, model, important_programs)
+
+
+def reprocess_report_partial(
+    report_id: str,
+    model: str = "ollama",
+) -> ReportPartialReprocessResponse:
+    """Re-enqueue only a report's FAILED analyses, keeping the rest intact.
+
+    Unlike ``reprocess_report`` (which deletes everything and re-ingests), this
+    leaves completed/pending/processing analyses untouched and re-enqueues each
+    ``failed`` analysis through the FIFO gate with its ORIGINAL inputs and
+    model. The run actor's claim then flips ``failed`` → ``processing`` when
+    the slot is free; checkpoint/resume means the flow resumes from the last
+    completed task instead of restarting.
+
+    The request ``model`` is used only as a fallback when an analysis has no
+    stored model (the stored per-analysis model wins).
+    """
+    # Lazy import: tasks imports this module for the batch actor.
+    from tasks import enqueue_analysis_for_sequential_processing
+    from .queue_repair import rebuild_analysis_inputs
+
+    if not report_ingestion.validate_report_id(report_id):
+        raise InvalidAnalysisInput(
+            f"Invalid report id: {report_id!r} (expected an md5-style hex token)"
+        )
+
+    analyses = database.get_analyses_by_report(report_id)
+    failed = [a for a in analyses if a["status"] == AnalysisStatus.FAILED.value]
+
+    items: List[ReportPartialReprocessItem] = []
+    requeued = 0
+    for a in failed:
+        try:
+            inputs = rebuild_analysis_inputs(a["id"])
+        except InvalidAnalysisInput as e:
+            items.append(
+                ReportPartialReprocessItem(
+                    analysis_id=a["id"], status="skipped", reason=str(e)
+                )
+            )
+            continue
+
+        enqueue_analysis_for_sequential_processing.send(
+            analysis_id=a["id"],
+            assessment_file=inputs["assessment_file"],
+            pdf_file=inputs["pdf_file"],
+            png_file=inputs["png_file"],
+            csv_file=inputs["csv_file"],
+            output_prefix=f"analysis_{a['id']}",
+            model=a.get("model") or model,
+            important_programs=a.get("important_programs") or [],
+            knowledge_files=inputs["knowledge_files"],
+        )
+        items.append(
+            ReportPartialReprocessItem(analysis_id=a["id"], status="requeued")
+        )
+        requeued += 1
+
+    logger.info(
+        "[Reports] %s partial reprocess: %d failed, %d requeued, %d skipped",
+        report_id,
+        len(failed),
+        requeued,
+        len(failed) - requeued,
+    )
+
+    return ReportPartialReprocessResponse(
+        report_id=report_id,
+        total_failed=len(failed),
+        requeued=requeued,
+        skipped=len(failed) - requeued,
+        items=items,
+    )
