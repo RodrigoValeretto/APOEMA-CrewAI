@@ -137,15 +137,15 @@ class Config:
 class DevelopmentConfig(Config):
     """Development configuration"""
 
-    DEBUG = True
-    LOG_LEVEL = "DEBUG"
+    DEBUG = os.getenv("DEBUG", "True").lower() == "true"
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
 
 
 class ProductionConfig(Config):
     """Production configuration"""
 
-    DEBUG = False
-    LOG_LEVEL = "INFO"
+    DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
     # In production, CORS should be more restrictive
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
 
@@ -158,7 +158,11 @@ class TestingConfig(Config):
     LOG_LEVEL = "DEBUG"
 
 
-# Determine which config to use
+# Determine which config to use. The env vars are read lazily by each class so
+# that ``DEBUG``/``LOG_LEVEL`` set on the container actually take effect — the
+# hardcoded class attributes below previously OVERRODE the ``DEBUG`` value the
+# compose file passed, which kept uvicorn's auto-reload on in production and
+# killed the app on any bind-mounted code change.
 _ENV = os.getenv("ENV", "development").lower()
 
 if _ENV == "production":

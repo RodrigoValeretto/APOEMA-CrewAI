@@ -232,7 +232,10 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
-      DEBUG: "False"
+      # uvicorn auto-reload gate. False in Docker keeps reload OFF so a code
+      # change on the bind mount never kills the server on a stale image.
+      DEBUG: ${DEBUG:-false}
+      ENV: ${ENV:-production}
     ports:
       - "${APP_PORT:-8000}:8000"
     depends_on:
