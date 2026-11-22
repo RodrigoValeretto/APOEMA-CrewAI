@@ -274,14 +274,13 @@ Cliente faz polling:
   - Request: `{model?, important_programs?, partial?}` (o `report_id` vai no PATH)
   - `partial=false` (default): apaga TODAS as análises do relatório (cascade
     limpa results + mappings), remove os checkpoints e os assets PNG/CSV por
-    gráfico, e re-ingere do zero — resposta `ReportIngestResponse`.
-  - `partial=true`: **não apaga nada**; reenfileira apenas as análises
-    `failed` do relatório através do gate FIFO (mantendo completed/pending/
-    processing intactas). Reusa os inputs originais via `analysis_file_mapping`
-    e o checkpoint/resume retoma do último task concluído. Resposta
-    `ReportPartialReprocessResponse` (`{report_id, total_failed, requeued,
-    skipped, items[]}`). Usar quando um lote teve falhas pontuais e não se quer
-    refazer o que já deu certo.
+    gráfico, e re-ingere do zero — cada gráfico vira uma análise `pending` nova.
+  - `partial=true`: apaga apenas as análises **não-`completed`** (failed,
+    pending, processing, cancelled), mantém as `completed`, e re-ingere — como
+    o ingest é idempotente por URL de gráfico, só os gráficos apagados são
+    recriados como `pending`. Resposta `ReportIngestResponse` (a mesma do
+    ingest) em ambos os modos. Usar quando um lote teve falhas pontuais e não
+    se quer refazer o que já deu certo.
 - **POST /api/reports/reprocess-batch**
   - Request: `{reports_list: [id, ...], model?, important_programs?, partial?}`
   - Response: `{total, items: [{report_id, status: "queued"}]}` (202 Accepted)

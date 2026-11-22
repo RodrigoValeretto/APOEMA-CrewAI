@@ -100,7 +100,7 @@ class TestDatabaseDeleteByReport:
         assert result == ids
         # First statement selects, second deletes.
         assert captured["sql"][1][0].strip().startswith("DELETE FROM analysis")
-        assert captured["sql"][1][1] == ("rel-x",)
+        assert captured["sql"][1][1] == ["rel-x"]
 
 
 class TestReprocessService:
@@ -133,7 +133,7 @@ class TestReprocessService:
         monkeypatch.setattr(
             report_service.database,
             "delete_analyses_by_report",
-            lambda ref: [a["id"] for a in analyses],
+            lambda ref, keep_statuses=None: [a["id"] for a in analyses],
         )
         monkeypatch.setattr(
             report_service, "checkpoint_path", lambda prefix: tmp_path / f"{prefix}.json"
@@ -169,7 +169,7 @@ class TestReprocessEndpoint:
         monkeypatch.setattr(
             api_module.report_service,
             "reprocess_report",
-            lambda rid, model, important_programs: {
+            lambda rid, model, important_programs, partial=False: {
                 "report_id": rid,
                 "report_reference": rid,
                 "total_charts": 2,
