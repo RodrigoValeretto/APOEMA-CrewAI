@@ -106,6 +106,22 @@ class Config:
     TASK_TIMEOUT_MINUTES = int(os.getenv("TASK_TIMEOUT_MINUTES", 60))
     TASK_TIMEOUT_SECONDS = TASK_TIMEOUT_MINUTES * 60
 
+    # Analysis gate concurrency. Controls how many analyses may be 'processing'
+    # at once — the FIFO gate's slot count. docker-compose reads the same var
+    # into `dramatiq --processes N --threads 1`, so the worker's process/thread
+    # count tracks the gate (one consumer thread per slot). Default 1 = the
+    # original single-analysis-at-a-time FIFO; raise it on a machine with spare
+    # RAM/VRAM to drain the queue faster.
+    ANALYSIS_CONCURRENCY = max(1, int(os.getenv("ANALYSIS_CONCURRENCY", "1")))
+
+    # Gate requeue backoff. A pending analysis that is not yet at the head of
+    # the FIFO queue re-checks the gate after a delay that grows with its
+    # position in the queue (base * (position + 1) ms, capped at max). The old
+    # flat 2s delay turned ~700 pending analyses into a ~350 msg/s requeue storm
+    # (queue churn + --verbose log spam) that OOM-killed the worker.
+    GATE_RECHECK_BASE_DELAY_MS = int(os.getenv("GATE_RECHECK_BASE_DELAY_MS", "2000"))
+    GATE_RECHECK_MAX_DELAY_MS = int(os.getenv("GATE_RECHECK_MAX_DELAY_MS", "60000"))
+
     # Pagination
     DEFAULT_PAGE_SIZE = int(os.getenv("DEFAULT_PAGE_SIZE", 10))
     MAX_PAGE_SIZE = int(os.getenv("MAX_PAGE_SIZE", 100))

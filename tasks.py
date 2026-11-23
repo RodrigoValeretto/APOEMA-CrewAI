@@ -38,6 +38,27 @@ from db_manager import (
     get_analysis,
 )
 from api.exceptions import AnalysisNotFound
+from config import get_config
+
+
+def _gate_recheck_delay_ms(analysis_id: int) -> int:
+    """Backoff (ms) for a gate requeue, growing with the analysis's queue position.
+
+    The old flat 2s delay made every non-head pending analysis re-check the
+    gate every 2s: with ~700 pending analyses that was a ~350 msg/s requeue
+    storm (RabbitMQ churn + --verbose log spam) that OOM-killed the worker.
+    Scaling the delay with the analysis's position (base * (position + 1),
+    capped) keeps the head of the queue responsive while spreading the tail's
+    polling out over minutes.
+    """
+    cfg = get_config()
+    base = cfg.GATE_RECHECK_BASE_DELAY_MS
+    cap = cfg.GATE_RECHECK_MAX_DELAY_MS
+    try:
+        position = count_older_pending_analyses(analysis_id)
+    except Exception:
+        position = 0
+    return min(base * (position + 1), cap)
 
 
 def _requeue_through_gate(
@@ -66,7 +87,7 @@ def _requeue_through_gate(
             "important_programs": important_programs,
             "knowledge_files": knowledge_files,
         },
-        delay=2000,
+        delay=_gate_recheck_delay_ms(analysis_id),
     )
     return {
         "analysis_id": analysis_id,
@@ -124,10 +145,10 @@ def enqueue_analysis_for_sequential_processing(
         # Check 1: If any OTHER analysis is currently processing
         processing_count = count_processing_analyses(exclude_analysis_id=analysis_id)
 
-        # Check 2: FIFO ordering - if there are older (lower ID) analyses still pending/processing
+        # Check 2: FIFO ordering - if there are older (lower ID) analyses still pending/queued
         older_pending_count = count_older_pending_analyses(analysis_id)
 
-        if processing_count > 0 or older_pending_count > 0:
+        if processing_count >= max(1, get_config().ANALYSIS_CONCURRENCY) or older_pending_count > 0:
             # Either another analysis is processing OR there are older analyses waiting
             # Requeue this one with delay
             reason = ""
@@ -156,7 +177,7 @@ def enqueue_analysis_for_sequential_processing(
                     "important_programs": important_programs,
                     "knowledge_files": knowledge_files,
                 },
-                delay=2000,  # 2 second delay before retry (Dramatiq will add exponential backoff)
+                delay=_gate_recheck_delay_ms(analysis_id),
             )
             return {
                 "analysis_id": analysis_id,

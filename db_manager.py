@@ -23,6 +23,7 @@ from api.database import (
 )
 from api.exceptions import AnalysisNotFound, DatabaseError
 from api.constants import AnalysisStatus
+from config import get_config
 
 
 class DatabaseManager:
@@ -65,9 +66,15 @@ class DatabaseManager:
         """Update analysis status"""
         db_update_analysis_status(analysis_id, status)
 
-    def claim_processing_slot(self, analysis_id: int) -> bool:
-        """Atomically claim the single-processing slot (FIFO gate)."""
-        return db_claim_analysis_for_processing(analysis_id)
+    def claim_processing_slot(self, analysis_id: int, max_concurrent: Optional[int] = None) -> bool:
+        """Atomically claim a processing slot (FIFO gate).
+
+        `max_concurrent` defaults to ANALYSIS_CONCURRENCY (the gate's slot
+        count). Callers that want to override it pass it explicitly.
+        """
+        if max_concurrent is None:
+            max_concurrent = get_config().ANALYSIS_CONCURRENCY
+        return db_claim_analysis_for_processing(analysis_id, max_concurrent)
 
     def save_result(
         self,
@@ -156,9 +163,12 @@ def update_analysis_status(analysis_id: int, status: str) -> None:
     get_db_manager().update_status(analysis_id, status)
 
 
-def claim_analysis_processing_slot(analysis_id: int) -> bool:
-    """Atomically claim the single-processing slot (FIFO gate)."""
-    return get_db_manager().claim_processing_slot(analysis_id)
+def claim_analysis_processing_slot(analysis_id: int, max_concurrent: Optional[int] = None) -> bool:
+    """Atomically claim a processing slot (FIFO gate).
+
+    `max_concurrent` defaults to ANALYSIS_CONCURRENCY.
+    """
+    return get_db_manager().claim_processing_slot(analysis_id, max_concurrent)
 
 
 def save_analysis_result(analysis_id: int, task_name: str, result: str) -> int:
