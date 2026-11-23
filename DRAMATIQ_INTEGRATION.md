@@ -34,7 +34,7 @@ Este guia descreve como integrar Dramatiq com o APOEMA para executar análises d
 
 | Worker | Comando (compose) | Fila | Responsabilidade |
 |---|---|---|---|
-| `dramatiq_worker` (2 processos) | `dramatiq --verbose tasks --processes 2` | `default` | Enfileiramento FIFO + execução do CrewAI (análises) |
+| `dramatiq_worker` (1 processo × 1 thread, configurável) | `dramatiq --verbose tasks --processes ${ANALYSIS_CONCURRENCY:-1} --threads 1` | `default` | Enfileiramento FIFO + execução do CrewAI (análises) |
 | `converter_worker` (1 processo) | `dramatiq conversion_tasks -Q conversion --processes 1 --verbose` | `conversion` | Conversão docling de documentos de corpus (PDF/XLSX → JSON) |
 
 - O broker (RabbitMQ) é configurado uma única vez em **`dramatiq_broker.py`**

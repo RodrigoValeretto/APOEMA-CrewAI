@@ -37,13 +37,15 @@ Este guia descreve como usar o Docker Compose para executar a aplicação APOEMA
 ```
 
 **Serviços atuais:** `postgres`, `rabbitmq`, `ollama`, `flyway`, `app` (FastAPI :8000),
-`dramatiq_worker` (fila `default` — análises; **2 processos**, o gate FIFO já
-serializa o processamento) e **`converter_worker`** (fila `conversion` — conversão de
+`dramatiq_worker` (fila `default` — análises; **`--processes ${ANALYSIS_CONCURRENCY:-1} --threads 1`**, o gate
+FIFO serializa o processamento) e **`converter_worker`** (fila `conversion` — conversão de
 documentos PDF/XLSX→JSON via docling; **1 processo × 1 thread**, volumes `./:/app` + `hf_cache`
 para os modelos HuggingFace do docling). O `--threads 1` é **obrigatório**: o docling carrega
 torch por conversão e a concorrência (default 8 threads/processo) estoura a RAM do Docker VM —
 um OOM (`Worker ... exited (code -9)`) matou o worker convertendo 8 fichas em paralelo (fix
-03/11/2026, branch `fixes-2026-11-03`).
+03/11/2026, branch `fixes-2026-11-03`). O worker de análise também carrega `restart: unless-stopped`
+e `mem_limit` (`DRAMATIQ_WORKER_MEM_LIMIT`, default `4g`): um OOM mata só o container (e ele
+auto-recupera), nunca o host — ver `ANALYSIS_CONCURRENCY` no `.env.example`.
 
 > **GPU (NVIDIA, opcional):** o serviço `ollama` aceita um override separado
 > (`docker-compose.gpu.yml`) que reserva um device NVIDIA para o container —
