@@ -686,6 +686,6 @@ curl -X POST http://localhost:8000/api/analysis \
 
 ---
 
-**Última atualização:** Novembro 2026 (fixes: `DRIVE_*` wired no docker-compose, `corpus_key` normalizado antes da validação, converter worker `--threads 1` p/ evitar OOM; **report ingest**: `POST /api/reports/ingest` consome um relatório APOEMA pelo id e enfileira uma análise por gráfico; **batch**: `POST /api/reports/ingest-batch` enfileira uma lista de relatórios para ingestão um por vez; **result_json**: resultados de task que são objeto JSON passam a ser armazenados parseados em `result_json` com `result` = null; **corpus**: `corpus_id`/`corpus_key` renomeados para `corpus_id`/`corpus_key` na API e na coluna `analysis.corpus_id` (V11))
-**Versão:** 2.3.0
+**Última atualização:** Novembro 2026 (fixes: `DRIVE_*` wired no docker-compose, `corpus_key` normalizado antes da validação, converter worker `--threads 1` p/ evitar OOM; **report ingest**: `POST /api/reports/ingest` consome um relatório APOEMA pelo id e enfileira uma análise por gráfico; **batch**: `POST /api/reports/ingest-batch` enfileira uma lista de relatórios para ingestão um por vez; **result_json**: resultados de task que são objeto JSON passam a ser armazenados parseados em `result_json` com `result` = null; **corpus**: `corpus_id`/`corpus_key` renomeados para `corpus_id`/`corpus_key` na API e na coluna `analysis.corpus_id` (V11); **memory-fix**: gate FIFO N-concorrente via `ANALYSIS_CONCURRENCY` (também controla `--processes`/`--threads`), requeue com backoff por posição na fila (`GATE_RECHECK_*`) e `restart: unless-stopped` + `mem_limit` no worker p/ auto-recuperar de OOM)
+**Versão:** 2.4.0
 **Status:** Pronto para testes ✅

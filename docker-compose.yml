@@ -92,7 +92,18 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: apoema-dramatiq-worker
-    command: dramatiq --verbose tasks --processes 2
+    # One consumer thread per gate slot: --processes == ANALYSIS_CONCURRENCY and
+    # --threads 1. The old `--processes 2` (8 threads each) left 15 threads idle
+    # but still polling the requeue queue, feeding the gate's requeue storm that
+    # OOM-killed the worker. Concurrency is now a single env knob.
+    command: dramatiq --verbose tasks --processes ${ANALYSIS_CONCURRENCY:-1} --threads 1
+    # Recover from an OOM/transient crash instead of leaving the analysis queue
+    # stuck with no consumer. The gate's idempotency guards make a restart safe
+    # (duplicate messages for completed/processing analyses are dropped).
+    restart: unless-stopped
+    # Cap the worker's memory so a leak/storm kills only this container (and
+    # restarts it), never the whole host. Raise via env if you raise concurrency.
+    mem_limit: ${DRAMATIQ_WORKER_MEM_LIMIT:-4g}
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
@@ -101,6 +112,10 @@ services:
       DB_NAME: ${DB_NAME:-apoema_db}
       DB_POOL_MIN_SIZE: ${DB_POOL_MIN_SIZE:-2}
       DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-20}
+      # Analysis gate concurrency + requeue backoff (see config.py).
+      ANALYSIS_CONCURRENCY: ${ANALYSIS_CONCURRENCY:-1}
+      GATE_RECHECK_BASE_DELAY_MS: ${GATE_RECHECK_BASE_DELAY_MS:-2000}
+      GATE_RECHECK_MAX_DELAY_MS: ${GATE_RECHECK_MAX_DELAY_MS:-60000}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
       DRAMATIQ_BROKER_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
       OLLAMA_HOST: http://ollama:11434

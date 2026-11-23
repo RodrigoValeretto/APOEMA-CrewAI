@@ -397,18 +397,22 @@ def update_analysis_status(analysis_id: int, new_status: str) -> None:
 _ANALYSIS_GATE_LOCK = 727001
 
 
-def claim_analysis_for_processing(analysis_id: int) -> bool:
+def claim_analysis_for_processing(analysis_id: int, max_concurrent: int = 1) -> bool:
     """
-    Atomically claim the single-processing slot for `analysis_id`.
+    Atomically claim a processing slot for `analysis_id`.
 
     The gate is enforced with a Postgres advisory transaction lock plus a
     compare-and-swap on the status column, so concurrent workers can NEVER
     both observe "no one is processing" and both start (the check-then-act
     race the naive FIFO check suffered from).
 
+    `max_concurrent` is the number of analyses allowed 'processing' at once
+    (the FIFO gate's slot count, driven by ANALYSIS_CONCURRENCY). The
+    default of 1 preserves the original single-analysis-at-a-time FIFO.
+
     Succeeds only when:
       - the analysis is not already 'completed', and
-      - no OTHER analysis is currently 'processing', and
+      - fewer than `max_concurrent` OTHER analyses are 'processing', and
       - no OLDER (lower-id) analysis is pending/processing/queued (FIFO).
 
     Returns True when the caller now owns the slot (status flipped to
@@ -426,13 +430,13 @@ def claim_analysis_for_processing(analysis_id: int) -> bool:
                     (analysis_id,),
                 )
                 processing_count = cur.fetchone()
-                if processing_count is not None and processing_count[0] > 0:
+                if processing_count is not None and processing_count[0] >= max_concurrent:
                     return False
 
                 cur.execute(
                     """
                     SELECT COUNT(*) FROM analysis
-                    WHERE id < %s AND status IN ('pending', 'processing', 'queued')
+                    WHERE id < %s AND status IN ('pending', 'queued')
                     """,
                     (analysis_id,),
                 )
@@ -897,16 +901,18 @@ def cancel_pending_analyses() -> int:
 
 def count_older_pending_analyses(analysis_id: int) -> int:
     """
-    Count number of analyses that are older (lower ID) and still pending/processing
+    Count number of analyses that are older (lower ID) and still WAITING.
 
-    This enforces FIFO ordering: an analysis can only be processed if all older
-    analyses have already been completed.
+    This enforces FIFO ordering: an analysis can only be processed if no older
+    analysis is still pending/queued. Analyses already 'processing' are NOT
+    counted — with ANALYSIS_CONCURRENCY > 1 they are allowed to run in
+    parallel, and counting them would pin the gate to a single slot.
 
     Args:
         analysis_id: ID of current analysis to check
 
     Returns:
-        Count of analyses with lower IDs that are not completed
+        Count of analyses with lower IDs that are still pending/queued
 
     Raises:
         DatabaseError: If database operation fails
@@ -918,7 +924,7 @@ def count_older_pending_analyses(analysis_id: int) -> int:
                     """
                     SELECT COUNT(*) FROM analysis
                     WHERE id < %s
-                    AND status IN ('pending', 'processing', 'queued')
+                    AND status IN ('pending', 'queued')
                     """,
                     (analysis_id,),
                 )
