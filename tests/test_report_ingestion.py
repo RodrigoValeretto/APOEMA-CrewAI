@@ -76,8 +76,24 @@ class TestAreaReverseLookup:
         assert area_code_from_name("Zootecnia / Recursos Pesqueiros") == "ZOOTECNIA"
         assert area_key("ZOOTECNIA") == "zootecnia"
 
+    def test_interdisciplinar_subarea_suffix_resolves(self):
+        # APOEMA reports the area as "<Area> - <Câmara>" for Interdisciplinar.
+        assert (
+            area_code_from_name("Interdisciplinar - Meio Ambiente e Agrárias")
+            == "INTER"
+        )
+        assert area_code_from_name("Interdisciplinar") == "INTER"
+
+    def test_numbered_sibling_does_not_shadow_prefix(self):
+        # A sub-area prefix must never resolve a numbered sibling to its bare
+        # parent (Ciências Biológicas I/II/III are distinct areas).
+        assert area_code_from_name("Ciências Biológicas I") == "CB_I"
+        assert area_code_from_name("Ciências Biológicas II") == "CB_II"
+        assert area_code_from_name("Ciências Biológicas III") == "CB_III"
+
     def test_unknown_name_returns_none(self):
         assert area_code_from_name("Área Inexistente") is None
+        assert area_code_from_name("") is None
 
 
 class TestReportService:

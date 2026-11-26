@@ -89,12 +89,28 @@ def area_code_from_name(name: str) -> Optional[str]:
     same code (APOEMA's ``info-report`` uses ``-`` where the catalog uses ``/``,
     e.g. ``"Zootecnia - Recursos Pesqueiros"`` vs ``"Zootecnia / Recursos
     Pesqueiros"`` — both slugify to ``zootecnia_recursos_pesqueiros``).
+
+    Also resolves a sub-area (câmara) suffix: APOEMA reports the Interdisciplinar
+    area as ``"Interdisciplinar - Meio Ambiente e Agrárias"``, so a name whose
+    slug is ``<official>_<suffix>`` matches the official area on a word boundary.
+    The longest official slug wins so numbered siblings (e.g. ``Medicina I`` vs
+    ``Medicina II``) never shadow a bare prefix.
     """
+    if not name:
+        return None
     target = slugify(name)
     for code, official in CAPES_AREAS.items():
         if slugify(official) == target:
             return code
-    return None
+    prefix = [
+        (slugify(official), code)
+        for code, official in CAPES_AREAS.items()
+        if target.startswith(slugify(official) + "_")
+    ]
+    if not prefix:
+        return None
+    prefix.sort(key=lambda pair: len(pair[0]), reverse=True)
+    return prefix[0][1]
 
 
 def parse_area_filename(name: str):
